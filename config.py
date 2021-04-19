@@ -1,6 +1,6 @@
 base_config = dict(
-	factor_dim=8,
-	residual_dim=16,
+	factor_dim=16,
+	residual_dim=128,
 
 	residual_std=1,
 
@@ -9,7 +9,7 @@ base_config = dict(
 	),
 
 	train=dict(
-		batch_size=32,
+		batch_size=16,
 		n_epochs=200,
 
 		learning_rate=dict(

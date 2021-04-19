@@ -59,7 +59,7 @@ class LatentModel(nn.Module):
 			img_size=config['img_shape'][0]
 		)
 
-	def encode_factors(self, img_id, factors, label_masks, return_assignment=False):
+	def encode_factors(self, img_id, factors, label_masks):
 		factor_codes = []
 
 		assignments = []
@@ -74,10 +74,7 @@ class LatentModel(nn.Module):
 			assignments.append(assignment)
 			factor_codes.append(factor_code)
 
-		if return_assignment:
-			return torch.cat(factor_codes, dim=1), assignments
-		else:
-			return torch.cat(factor_codes, dim=1)
+		return torch.cat(factor_codes, dim=1), assignments
 
 
 class Model:
@@ -189,6 +186,8 @@ class Model:
 			for term, loss in losses.items():
 				summary.add_scalar(tag='loss/generator/{}'.format(term), scalar_value=loss.item(), global_step=epoch)
 
+			codes = self.encode(dataset)
+
 			for factor_idx, factor_name in enumerate(self.config['factor_names']):
 				figure_fixed = self.visualize_translation(dataset, factor_idx, randomized=False)
 				figure_random = self.visualize_translation(dataset, factor_idx, randomized=True)
@@ -196,19 +195,21 @@ class Model:
 				summary.add_image(tag='{}-fixed'.format(factor_name), img_tensor=figure_fixed, global_step=epoch)
 				summary.add_image(tag='{}-random'.format(factor_name), img_tensor=figure_random, global_step=epoch)
 
-			# if epoch % 10 == 0:
-			# 	content_codes = self.encode_content(dataset)
-			# 	score_train, score_test = self.classification_score(X=content_codes, y=classes)
-			# 	summary.add_scalar(tag='class_from_content/train', scalar_value=score_train, global_step=epoch)
-			# 	summary.add_scalar(tag='class_from_content/test', scalar_value=score_test, global_step=epoch)
+				if epoch % 10 == 0:
+					score_train, score_test = self.classification_score(
+						X_train=codes[factor_idx][label_masks[:, factor_idx]], X_test=codes[factor_idx][~label_masks[:, factor_idx]],
+						y_train=factors[:, factor_idx][label_masks[:, factor_idx]], y_test=factors[:, factor_idx][~label_masks[:, factor_idx]],
+					)
+
+					summary.add_scalar(tag='{}/train'.format(factor_name), scalar_value=score_train, global_step=epoch)
+					summary.add_scalar(tag='{}/test'.format(factor_name), scalar_value=score_test, global_step=epoch)
 
 			self.save(model_dir)
 
 		summary.close()
 
-
 	def train_latent_generator(self, batch):
-		factor_codes, assignments = self.latent_model.encode_factors(batch['img_id'], batch['factors'], batch['label_masks'], return_assignment=True)
+		factor_codes, assignments = self.latent_model.encode_factors(batch['img_id'], batch['factors'], batch['label_masks'])
 		residual_code = self.latent_model.residual_embeddings(batch['img_id'])
 
 		if self.config['residual_std'] != 0:
@@ -233,6 +234,21 @@ class Model:
 		}
 
 	@torch.no_grad()
+	def encode(self, dataset):
+		self.latent_model.eval()
+
+		codes = []
+		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
+		for batch in data_loader:
+			batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
+
+			batch_codes, _ = self.latent_model.encode_factors(batch['img_id'], batch['factors'], batch['label_masks'])
+			codes.append(batch_codes.cpu())
+
+		codes = torch.cat(codes, dim=0)
+		return [t.numpy() for t in torch.split(codes, split_size_or_sections=self.config['factor_dim'], dim=1)]
+
+	@torch.no_grad()
 	def visualize_translation(self, dataset, factor_idx, n_samples=10, randomized=False, amortized=False):
 		random = self.rs if randomized else np.random.RandomState(seed=0)
 		img_idx = torch.from_numpy(random.choice(len(dataset), size=n_samples, replace=False))
@@ -245,7 +261,7 @@ class Model:
 
 		else:
 			self.latent_model.eval()
-			samples['factor_codes'] = self.latent_model.encode_factors(samples['img_id'], samples['factors'], samples['label_masks'])
+			samples['factor_codes'], _ = self.latent_model.encode_factors(samples['img_id'], samples['factors'], samples['label_masks'])
 			samples['residual_code'] = self.latent_model.residual_embeddings(samples['img_id'])
 			samples['factor_codes'] = torch.split(samples['factor_codes'], split_size_or_sections=self.config['factor_dim'], dim=1)
 
@@ -269,11 +285,11 @@ class Model:
 		return figure.clamp(min=0, max=1)
 
 	@staticmethod
-	def classification_score(X, y):
-		scaler = StandardScaler()
-		X = scaler.fit_transform(X)
+	def classification_score(X_train, X_test, y_train, y_test):
+		# scaler = StandardScaler()
+		# X = scaler.fit_transform(X)
 
-		X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+		# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
 		classifier = LogisticRegression(random_state=0)
 		classifier.fit(X_train, y_train)
