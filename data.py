@@ -58,8 +58,7 @@ class Cars3D(DataSet):
 			'imgs': np.reshape(imgs, (-1, 64, 64, 3)),
 			'factors': cartesian((np.arange(4), np.arange(24), np.arange(183))),
 			'factor_sizes': [4, 24, 183],
-			'factor_names': ['elevation', 'azimuth', 'object'],
-			'static_factors': [2]
+			'factor_names': ['elevation', 'azimuth', 'object']
 		}
 
 	@staticmethod
@@ -98,8 +97,7 @@ class SmallNorb(DataSet):
 			'imgs': imgs[sort_idx],
 			'factors': features[sort_idx],
 			'factor_sizes': [np.unique(features[:, f]).size for f in range(features.shape[1])],
-			'factor_names': ['category', 'instance', 'elevation', 'azimuth', 'lighting'],
-			'static_factors': [0, 1]
+			'factor_names': ['category', 'instance', 'elevation', 'azimuth', 'lighting']
 		}
 
 	def _load_chunks(self, chunk_names):
@@ -169,8 +167,7 @@ class Shapes3D(DataSet):
 				'imgs': imgs,
 				'factors': factors,
 				'factor_sizes': [np.unique(factors[:, f]).size for f in range(factors.shape[1])],
-				'factor_names': ['floor_color', 'wall_color', 'object_color', 'scale', 'shape', 'azimuth'],
-				'static_factors': [4]
+				'factor_names': ['floor_color', 'wall_color', 'object_color', 'scale', 'shape', 'azimuth']
 			}
 
 
@@ -190,8 +187,7 @@ class DSprites(DataSet):
 			'imgs': imgs,
 			'factors': factors,
 			'factor_sizes': [np.unique(factors[:, f]).size for f in range(factors.shape[1])],
-			'factor_names': ['shape', 'scale', 'orientation', 'x', 'y'],
-			'static_factors': [0]
+			'factor_names': ['shape', 'scale', 'orientation', 'x', 'y']
 		}
 
 

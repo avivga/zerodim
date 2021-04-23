@@ -197,8 +197,8 @@ class Model:
 
 				if epoch % 10 == 0:
 					score_train, score_test = self.classification_score(
-						X_train=codes[factor_idx][label_masks[:, factor_idx]], X_test=codes[factor_idx][~label_masks[:, factor_idx]],
-						y_train=factors[:, factor_idx][label_masks[:, factor_idx]], y_test=factors[:, factor_idx][~label_masks[:, factor_idx]],
+						X_train=codes[label_masks[:, factor_idx], factor_idx], X_test=codes[~label_masks[:, factor_idx], factor_idx],
+						y_train=factors[label_masks[:, factor_idx], factor_idx], y_test=factors[~label_masks[:, factor_idx], factor_idx],
 					)
 
 					summary.add_scalar(tag='{}/train'.format(factor_name), scalar_value=score_train, global_step=epoch)
@@ -246,7 +246,7 @@ class Model:
 			codes.append(batch_codes.cpu())
 
 		codes = torch.cat(codes, dim=0)
-		return [t.numpy() for t in torch.split(codes, split_size_or_sections=self.config['factor_dim'], dim=1)]
+		return torch.stack(torch.split(codes, split_size_or_sections=self.config['factor_dim'], dim=1), dim=1).numpy()
 
 	@torch.no_grad()
 	def visualize_translation(self, dataset, factor_idx, n_samples=10, randomized=False, amortized=False):
@@ -267,14 +267,16 @@ class Model:
 
 		generator = self.amortized_model.generator if amortized else self.latent_model.generator
 
-		blank = torch.ones_like(samples['img'][0])
-		figure = [torch.cat([blank] + list(samples['img']), dim=2)]
+		figure = []
 		for i in range(n_samples):
 			converted_imgs = [samples['img'][i]]
+			factor_codes = [samples['factor_codes'][f][[i]] for f in range(self.config['n_factors'])]
 
-			for j in range(n_samples):
-				factor_codes = [samples['factor_codes'][f][[i]] for f in range(self.config['n_factors'])]
-				factor_codes[factor_idx] = samples['factor_codes'][factor_idx][[j]]
+			factor_values = torch.arange(self.config['factor_sizes'][factor_idx], dtype=torch.int64).to(self.device)
+			factor_embeddings = self.latent_model.factor_embeddings[factor_idx](factor_values)
+
+			for j in range(factor_embeddings.shape[0]):
+				factor_codes[factor_idx] = factor_embeddings[[j]]
 				latent_code = torch.cat(factor_codes + [samples['residual_code'][[i]]], dim=1)
 				converted_img = generator(latent_code)
 				converted_imgs.append(converted_img[0])
@@ -286,10 +288,9 @@ class Model:
 
 	@staticmethod
 	def classification_score(X_train, X_test, y_train, y_test):
-		# scaler = StandardScaler()
-		# X = scaler.fit_transform(X)
-
-		# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+		scaler = StandardScaler()
+		X_train = scaler.fit_transform(X_train)
+		X_test = scaler.transform(X_test)
 
 		classifier = LogisticRegression(random_state=0)
 		classifier.fit(X_train, y_train)
