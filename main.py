@@ -1,4 +1,6 @@
 import argparse
+import os
+
 import numpy as np
 
 import data
@@ -23,16 +25,21 @@ def train(args):
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
 	imgs = data['imgs'].astype(np.float32) / 255.0
+	factors = data['factors']
 
-	factors = data['factors'][:, :3]
+	# TODO: separate partial N and incomplete D
 	label_masks = (np.random.rand(*factors.shape) < 0.1)
+
+	# TODO: not well defined
+	# label_masks[factors == -1] = False
+	# factors[factors == -1] = 0  # dummy
 
 	config = dict(
 		img_shape=imgs.shape[1:],
 		n_imgs=imgs.shape[0],
-		factor_sizes=data['factor_sizes'][:3],
-		n_factors=len(data['factor_sizes'][:3]),
-		factor_names=data['factor_names'][:3]
+		factor_sizes=data['factor_sizes'],
+		n_factors=len(data['factor_sizes']),
+		factor_names=data['factor_names']
 	)
 
 	config.update(base_config)
@@ -53,7 +60,7 @@ def main():
 	preprocess_parser.add_argument('-dp', '--dataset-path', type=str, required=True)
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
-	
+
 	train_parser = action_parsers.add_parser('train')
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)

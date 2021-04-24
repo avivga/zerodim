@@ -5,10 +5,6 @@ from tqdm import tqdm
 
 import numpy as np
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-
 import torch
 from torch import nn
 from torch.optim import Adam
@@ -19,6 +15,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from network.modules import Generator, VGGFeatures, VGGDistance
 from network.utils import NamedTensorDataset
+
+from evaluation import dci
 
 
 class LatentModel(nn.Module):
@@ -38,6 +36,7 @@ class LatentModel(nn.Module):
 			for f in range(config['n_factors'])
 		])
 
+		# TODO: maybe replace with encoder
 		self.img_factor_embeddings = nn.ModuleList([
 			nn.Embedding(
 				num_embeddings=config['n_imgs'],
@@ -87,7 +86,6 @@ class Model:
 
 		self.latent_model = None
 		self.amortized_model = None
-		self.amortized_model_ema = None
 
 		self.vgg_features = VGGFeatures()
 		self.perceptual_loss = VGGDistance(self.vgg_features, config['perceptual_loss']['layers'])
@@ -186,7 +184,15 @@ class Model:
 			for term, loss in losses.items():
 				summary.add_scalar(tag='loss/generator/{}'.format(term), scalar_value=loss.item(), global_step=epoch)
 
-			codes = self.encode(dataset)
+			latents = self.encode(dataset)
+			if epoch % 10 == 0:
+				scores = dci.compute_dci(latents, factors)
+
+				summary.add_scalar(tag='dci/informativeness', scalar_value=scores['informativeness_test'], global_step=epoch)
+				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
+				summary.add_scalar(tag='dci/completeness', scalar_value=scores['completeness'], global_step=epoch)
+
+				# TODO: track residual
 
 			for factor_idx, factor_name in enumerate(self.config['factor_names']):
 				figure_fixed = self.visualize_translation(dataset, factor_idx, randomized=False)
@@ -194,15 +200,6 @@ class Model:
 
 				summary.add_image(tag='{}-fixed'.format(factor_name), img_tensor=figure_fixed, global_step=epoch)
 				summary.add_image(tag='{}-random'.format(factor_name), img_tensor=figure_random, global_step=epoch)
-
-				if epoch % 10 == 0:
-					score_train, score_test = self.classification_score(
-						X_train=codes[label_masks[:, factor_idx], factor_idx], X_test=codes[~label_masks[:, factor_idx], factor_idx],
-						y_train=factors[label_masks[:, factor_idx], factor_idx], y_test=factors[~label_masks[:, factor_idx], factor_idx],
-					)
-
-					summary.add_scalar(tag='{}/train'.format(factor_name), scalar_value=score_train, global_step=epoch)
-					summary.add_scalar(tag='{}/test'.format(factor_name), scalar_value=score_test, global_step=epoch)
 
 			self.save(model_dir)
 
@@ -252,8 +249,8 @@ class Model:
 	def visualize_translation(self, dataset, factor_idx, n_samples=10, randomized=False, amortized=False):
 		random = self.rs if randomized else np.random.RandomState(seed=0)
 		img_idx = torch.from_numpy(random.choice(len(dataset), size=n_samples, replace=False))
-		samples = dataset[img_idx]
-		samples = {name: tensor.to(self.device) for name, tensor in samples.items()}
+		batch = dataset[img_idx]
+		batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
 
 		if amortized:
 			self.amortized_model.eval()
@@ -261,41 +258,27 @@ class Model:
 
 		else:
 			self.latent_model.eval()
-			samples['factor_codes'], _ = self.latent_model.encode_factors(samples['img_id'], samples['factors'], samples['label_masks'])
-			samples['residual_code'] = self.latent_model.residual_embeddings(samples['img_id'])
-			samples['factor_codes'] = torch.split(samples['factor_codes'], split_size_or_sections=self.config['factor_dim'], dim=1)
+
+			batch['factor_codes'], _ = self.latent_model.encode_factors(batch['img_id'], batch['factors'], batch['label_masks'])
+			batch['residual_code'] = self.latent_model.residual_embeddings(batch['img_id'])
 
 		generator = self.amortized_model.generator if amortized else self.latent_model.generator
 
 		figure = []
 		for i in range(n_samples):
-			converted_imgs = [samples['img'][i]]
-			factor_codes = [samples['factor_codes'][f][[i]] for f in range(self.config['n_factors'])]
+			converted_imgs = [batch['img'][i]]
 
+			factor_codes = list(torch.split(batch['factor_codes'][i], split_size_or_sections=self.config['factor_dim'], dim=0))
 			factor_values = torch.arange(self.config['factor_sizes'][factor_idx], dtype=torch.int64).to(self.device)
 			factor_embeddings = self.latent_model.factor_embeddings[factor_idx](factor_values)
 
 			for j in range(factor_embeddings.shape[0]):
-				factor_codes[factor_idx] = factor_embeddings[[j]]
-				latent_code = torch.cat(factor_codes + [samples['residual_code'][[i]]], dim=1)
-				converted_img = generator(latent_code)
+				factor_codes[factor_idx] = factor_embeddings[j]
+				latent_code = torch.cat(factor_codes + [batch['residual_code'][i]], dim=0)
+				converted_img = generator(latent_code.unsqueeze(dim=0))
 				converted_imgs.append(converted_img[0])
 
 			figure.append(torch.cat(converted_imgs, dim=2))
 
 		figure = torch.cat(figure, dim=1)
 		return figure.clamp(min=0, max=1)
-
-	@staticmethod
-	def classification_score(X_train, X_test, y_train, y_test):
-		scaler = StandardScaler()
-		X_train = scaler.fit_transform(X_train)
-		X_test = scaler.transform(X_test)
-
-		classifier = LogisticRegression(random_state=0)
-		classifier.fit(X_train, y_train)
-
-		acc_train = classifier.score(X_train, y_train)
-		acc_test = classifier.score(X_test, y_test)
-
-		return acc_train, acc_test
