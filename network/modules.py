@@ -89,7 +89,46 @@ class Generator(nn.Module):
 		return image
 
 
-class Encoder(nn.Module):
+class FactorEncoder(nn.Module):
+
+	def __init__(self, img_shape, latent_dim, dim_in=32, max_conv_dim=128):
+		super().__init__()
+
+		blocks = []
+		blocks += [nn.Conv2d(in_channels=img_shape[-1], out_channels=dim_in, kernel_size=3, stride=1, padding=1)]
+
+		n_blocks = int(np.log2(img_shape[0])) - 2
+		for _ in range(n_blocks):
+			dim_out = min(dim_in*2, max_conv_dim)
+
+			blocks += [
+				nn.Conv2d(in_channels=dim_in, out_channels=dim_out, kernel_size=3, stride=1, padding=1),
+				nn.LeakyReLU(0.2),
+				nn.MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False),
+			]
+
+			dim_in = dim_out
+
+		blocks += [nn.Conv2d(in_channels=dim_out, out_channels=dim_out, kernel_size=4, stride=1, padding=0)]
+		self.conv = nn.Sequential(*blocks)
+
+		self.fc = nn.Sequential(
+			nn.Linear(in_features=dim_out, out_features=dim_out // 2),
+			nn.LeakyReLU(0.2),
+
+			nn.Linear(in_features=dim_out // 2, out_features=latent_dim)
+		)
+
+	def forward(self, img):
+		batch_size = img.shape[0]
+
+		x = self.conv(img)
+		x = x.view((batch_size, -1))
+
+		return self.fc(x)
+
+
+class ResidualEncoder(nn.Module):
 
 	def __init__(self, img_size, code_dim, dim_in=64, max_conv_dim=256):
 		super().__init__()

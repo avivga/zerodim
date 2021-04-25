@@ -13,7 +13,7 @@ from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from network.modules import Generator, Encoder, VGGFeatures, VGGDistance
+from network.modules import Generator, FactorEncoder, ResidualEncoder, VGGFeatures, VGGDistance
 from network.utils import NamedTensorDataset
 
 from evaluation import dci
@@ -37,7 +37,7 @@ class FactorModel(nn.Module):
 		])
 
 		self.factor_encoders = nn.ModuleList([
-			Encoder(img_size=config['img_shape'][0], code_dim=config['factor_sizes'][f])
+			FactorEncoder(img_shape=config['img_shape'], latent_dim=config['factor_sizes'][f])
 			for f in range(config['n_factors'])
 		])
 
