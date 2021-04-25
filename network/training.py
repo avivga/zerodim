@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from network.modules import Generator, FactorEncoder, ResidualEncoder, VGGFeatures, VGGDistance
 from network.utils import NamedTensorDataset
 
-from evaluation import dci
+from evaluation import dci, classifier
 
 
 class FactorModel(nn.Module):
@@ -191,15 +191,18 @@ class Model:
 			for term, loss in losses.items():
 				summary.add_scalar(tag='loss/generator/{}'.format(term), scalar_value=loss.item(), global_step=epoch)
 
-			latents = self.encode(dataset)
 			if epoch % 10 == 0:
-				scores = dci.compute_dci(latents, factors)
+				latent_factors = self.encode_factors(dataset)
+				scores = dci.compute_dci(latent_factors, factors)
 
 				summary.add_scalar(tag='dci/informativeness', scalar_value=scores['informativeness_test'], global_step=epoch)
 				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
 				summary.add_scalar(tag='dci/completeness', scalar_value=scores['completeness'], global_step=epoch)
 
-				# TODO: track residual
+				latent_residuals = self.encode_residuals(dataset)
+				for factor_idx, factor_name in enumerate(self.config['factor_names']):
+					acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, factor_idx])
+					summary.add_scalar(tag='residual/{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
 
 			for factor_idx, factor_name in enumerate(self.config['factor_names']):
 				figure_fixed = self.visualize_translation(dataset, factor_idx, randomized=False)
@@ -238,7 +241,7 @@ class Model:
 		}
 
 	@torch.no_grad()
-	def encode(self, dataset):
+	def encode_factors(self, dataset):
 		self.latent_model.eval()
 
 		codes = []
@@ -251,6 +254,21 @@ class Model:
 
 		codes = torch.cat(codes, dim=0)
 		return torch.stack(torch.split(codes, split_size_or_sections=self.config['factor_dim'], dim=1), dim=1).numpy()
+
+	@torch.no_grad()
+	def encode_residuals(self, dataset):
+		self.latent_model.eval()
+
+		codes = []
+		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
+		for batch in data_loader:
+			batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
+
+			batch_codes = self.latent_model.residual_embeddings(batch['img_id'])
+			codes.append(batch_codes.cpu())
+
+		codes = torch.cat(codes, dim=0)
+		return codes
 
 	@torch.no_grad()
 	def visualize_translation(self, dataset, factor_idx, n_samples=10, randomized=False, amortized=False):
