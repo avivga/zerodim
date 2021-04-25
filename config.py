@@ -15,6 +15,7 @@ base_config = dict(
 		learning_rate=dict(
 			latent=1e-2,
 			generator=1e-3,
+			encoder=1e-4,
 			min=1e-5
 		),
 

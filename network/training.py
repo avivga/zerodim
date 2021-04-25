@@ -13,13 +13,13 @@ from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from network.modules import Generator, VGGFeatures, VGGDistance
+from network.modules import Generator, Encoder, VGGFeatures, VGGDistance
 from network.utils import NamedTensorDataset
 
 from evaluation import dci
 
 
-class LatentModel(nn.Module):
+class FactorModel(nn.Module):
 
 	def __init__(self, config):
 		super().__init__()
@@ -36,16 +36,37 @@ class LatentModel(nn.Module):
 			for f in range(config['n_factors'])
 		])
 
-		# TODO: maybe replace with encoder
-		self.img_factor_embeddings = nn.ModuleList([
-			nn.Embedding(
-				num_embeddings=config['n_imgs'],
-				embedding_dim=config['factor_sizes'][f],
-				_weight=torch.rand((config['n_imgs'], config['factor_sizes'][f])) * 0.05
-			)
-
+		self.factor_encoders = nn.ModuleList([
+			Encoder(img_size=config['img_shape'][0], code_dim=config['factor_sizes'][f])
 			for f in range(config['n_factors'])
 		])
+
+	def forward(self, img, factors, label_masks):
+		factor_codes = []
+
+		assignments = []
+		for f in range(self.config['n_factors']):
+			assignment = Categorical(logits=self.factor_encoders[f](img))
+
+			factor_code = (
+				self.factor_embeddings[f](factors[:, f]) * label_masks[:, [f]]
+				+ torch.matmul(assignment.probs, self.factor_embeddings[f].weight) * (~label_masks[:, [f]])
+			)
+
+			assignments.append(assignment)
+			factor_codes.append(factor_code)
+
+		return torch.cat(factor_codes, dim=1), assignments
+
+
+class LatentModel(nn.Module):
+
+	def __init__(self, config):
+		super().__init__()
+
+		self.config = config
+
+		self.factor_model = FactorModel(config)
 
 		self.residual_embeddings = nn.Embedding(
 			num_embeddings=config['n_imgs'],
@@ -57,23 +78,6 @@ class LatentModel(nn.Module):
 			latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
 			img_size=config['img_shape'][0]
 		)
-
-	def encode_factors(self, img_id, factors, label_masks):
-		factor_codes = []
-
-		assignments = []
-		for f in range(self.config['n_factors']):
-			assignment = Categorical(logits=self.img_factor_embeddings[f](img_id))
-
-			factor_code = (
-				self.factor_embeddings[f](factors[:, f]) * label_masks[:, [f]]
-				+ torch.matmul(assignment.probs, self.factor_embeddings[f].weight) * (~label_masks[:, [f]])
-			)
-
-			assignments.append(assignment)
-			factor_codes.append(factor_code)
-
-		return torch.cat(factor_codes, dim=1), assignments
 
 
 class Model:
@@ -134,12 +138,15 @@ class Model:
 		optimizer = Adam([
 			{
 				'params': itertools.chain(
-					self.latent_model.factor_embeddings.parameters(),
-					self.latent_model.img_factor_embeddings.parameters(),
+					self.latent_model.factor_model.factor_embeddings.parameters(),
 					self.latent_model.residual_embeddings.parameters()
 				),
 
 				'lr': self.config['train']['learning_rate']['latent']
+			},
+			{
+				'params': self.latent_model.factor_model.factor_encoders.parameters(),
+				'lr': self.config['train']['learning_rate']['encoder']
 			},
 			{
 				'params': self.latent_model.generator.parameters(),
@@ -206,7 +213,7 @@ class Model:
 		summary.close()
 
 	def train_latent_generator(self, batch):
-		factor_codes, assignments = self.latent_model.encode_factors(batch['img_id'], batch['factors'], batch['label_masks'])
+		factor_codes, assignments = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
 		residual_code = self.latent_model.residual_embeddings(batch['img_id'])
 
 		if self.config['residual_std'] != 0:
@@ -239,7 +246,7 @@ class Model:
 		for batch in data_loader:
 			batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
 
-			batch_codes, _ = self.latent_model.encode_factors(batch['img_id'], batch['factors'], batch['label_masks'])
+			batch_codes, _ = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
 			codes.append(batch_codes.cpu())
 
 		codes = torch.cat(codes, dim=0)
@@ -259,7 +266,7 @@ class Model:
 		else:
 			self.latent_model.eval()
 
-			batch['factor_codes'], _ = self.latent_model.encode_factors(batch['img_id'], batch['factors'], batch['label_masks'])
+			batch['factor_codes'], _ = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
 			batch['residual_code'] = self.latent_model.residual_embeddings(batch['img_id'])
 
 		generator = self.amortized_model.generator if amortized else self.latent_model.generator
@@ -270,7 +277,7 @@ class Model:
 
 			factor_codes = list(torch.split(batch['factor_codes'][i], split_size_or_sections=self.config['factor_dim'], dim=0))
 			factor_values = torch.arange(self.config['factor_sizes'][factor_idx], dtype=torch.int64).to(self.device)
-			factor_embeddings = self.latent_model.factor_embeddings[factor_idx](factor_values)
+			factor_embeddings = self.latent_model.factor_model.factor_embeddings[factor_idx](factor_values)
 
 			for j in range(factor_embeddings.shape[0]):
 				factor_codes[factor_idx] = factor_embeddings[j]
