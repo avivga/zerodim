@@ -25,22 +25,38 @@ def train(args):
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
 	imgs = data['imgs'].astype(np.float32) / 255.0
-	factors = data['factors']
 
-	# TODO: separate partial N and incomplete D
-	label_masks = (np.random.rand(*factors.shape) < 0.1)
+	factors = np.load(os.path.join(args.base_dir, 'cache', 'preprocess', 'celeba-clip-l5000.npy')).astype(np.int64).T
+	label_masks = np.ones_like(factors).astype(np.bool)
+	label_masks[factors == -1] = False
+	factors[factors == -1] = 0  # dummy valid value
 
-	# TODO: not well defined
-	# label_masks[factors == -1] = False
-	# factors[factors == -1] = 0  # dummy
+	factor_sizes = [np.unique(factors[:, i]).size for i in range(factors.shape[1])]
 
 	config = dict(
 		img_shape=imgs.shape[1:],
 		n_imgs=imgs.shape[0],
-		factor_sizes=data['factor_sizes'],
-		n_factors=len(data['factor_sizes']),
-		factor_names=data['factor_names']
+		factor_sizes=factor_sizes,
+		n_factors=len(factor_sizes),
+		factor_names=["age", "gender", "ethnicity", "hair", "face", "attractive", "thin", "hairstyle", "beard", "glasses"]
 	)
+
+	# factors = data['factors'][:, :3]
+	#
+	# # TODO: separate partial N and incomplete D
+	# label_masks = (np.random.rand(*factors.shape) < 0.1)
+	#
+	# # TODO: not well defined
+	# # label_masks[factors == -1] = False
+	# # factors[factors == -1] = 0  # dummy
+	#
+	# config = dict(
+	# 	img_shape=imgs.shape[1:],
+	# 	n_imgs=imgs.shape[0],
+	# 	factor_sizes=data['factor_sizes'][:3],
+	# 	n_factors=len(data['factor_sizes'][:3]),
+	# 	factor_names=data['factor_names'][:3]
+	# )
 
 	config.update(base_config)
 

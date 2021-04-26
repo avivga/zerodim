@@ -1,5 +1,5 @@
 base_config = dict(
-	factor_dim=16,
+	factor_dim=8,
 	residual_dim=128,
 
 	residual_std=1,
