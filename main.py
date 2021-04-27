@@ -49,7 +49,7 @@ def train_synthetic(args):
 def train(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.recreate_model_dir(args.model_name)
-	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
+	tensorboard_dir = assets.recreate_tensorboard_dir(args.data_name, args.model_name)
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
 	imgs = data['imgs'].astype(np.float32) / 255.0

@@ -39,11 +39,11 @@ class AssetManager:
 		self.__recreate_dir(model_dir)
 		return model_dir
 
-	def get_tensorboard_dir(self, model_name):
-		return os.path.join(self.__tensorboard_dir, model_name)
+	def get_tensorboard_dir(self, data_name, model_name):
+		return os.path.join(self.__tensorboard_dir, data_name, model_name)
 
-	def recreate_tensorboard_dir(self, model_name):
-		tensorboard_dir = self.get_tensorboard_dir(model_name)
+	def recreate_tensorboard_dir(self, data_name, model_name):
+		tensorboard_dir = self.get_tensorboard_dir(data_name, model_name)
 
 		self.__recreate_dir(tensorboard_dir)
 		return tensorboard_dir
