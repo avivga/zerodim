@@ -18,6 +18,34 @@ def preprocess(args, extras=[]):
 	np.savez(file=assets.get_preprocess_file_path(args.data_name), **img_dataset.read())
 
 
+def train_synthetic(args):
+	assets = AssetManager(args.base_dir)
+	model_dir = assets.recreate_model_dir(args.model_name)
+	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
+
+	data = np.load(assets.get_preprocess_file_path(args.data_name))
+	imgs = data['imgs'].astype(np.float32) / 255.0
+
+	labeled_factors_ids = [np.where(data['factor_names'] == factor_name)[0][0] for factor_name in args.labeled_factors]
+	factors = data['factors'][:, labeled_factors_ids]
+
+	# TODO: separate partial N and incomplete D
+	label_masks = (np.random.rand(*factors.shape) < args.label_ratio)
+
+	config = dict(
+		img_shape=imgs.shape[1:],
+		n_imgs=imgs.shape[0],
+		factor_sizes=data['factor_sizes'][labeled_factors_ids],
+		n_factors=len(labeled_factors_ids),
+		factor_names=data['factor_names'][labeled_factors_ids]
+	)
+
+	config.update(base_config)
+
+	model = Model(config)
+	model.train(imgs, factors, label_masks, model_dir, tensorboard_dir)
+
+
 def train(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.recreate_model_dir(args.model_name)
@@ -41,23 +69,6 @@ def train(args):
 		factor_names=["age", "gender", "ethnicity", "hair", "face", "attractive", "thin", "hairstyle", "beard", "glasses"]
 	)
 
-	# factors = data['factors'][:, :3]
-	#
-	# # TODO: separate partial N and incomplete D
-	# label_masks = (np.random.rand(*factors.shape) < 0.1)
-	#
-	# # TODO: not well defined
-	# # label_masks[factors == -1] = False
-	# # factors[factors == -1] = 0  # dummy
-	#
-	# config = dict(
-	# 	img_shape=imgs.shape[1:],
-	# 	n_imgs=imgs.shape[0],
-	# 	factor_sizes=data['factor_sizes'][:3],
-	# 	n_factors=len(data['factor_sizes'][:3]),
-	# 	factor_names=data['factor_names'][:3]
-	# )
-
 	config.update(base_config)
 
 	model = Model(config)
@@ -76,6 +87,13 @@ def main():
 	preprocess_parser.add_argument('-dp', '--dataset-path', type=str, required=True)
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
+
+	train_synthetic_parser = action_parsers.add_parser('train-synthetic')
+	train_synthetic_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	train_synthetic_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	train_synthetic_parser.add_argument('-lf', '--labeled-factors', type=str, nargs='+', required=True)
+	train_synthetic_parser.add_argument('-r', '--label-ratio', type=float, required=True)
+	train_synthetic_parser.set_defaults(func=train_synthetic)
 
 	train_parser = action_parsers.add_parser('train')
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
