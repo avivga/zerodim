@@ -13,7 +13,7 @@ from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from network.modules import Generator, FactorEncoder, ResidualEncoder, VGGFeatures, VGGDistance
+from network.modules import StyleGenerator, BetaVAEGenerator, FactorEncoder, ResidualEncoder, VGGDistance
 from network.utils import NamedTensorDataset
 
 from evaluation import dci, classifier
@@ -79,10 +79,16 @@ class LatentModel(nn.Module):
 			_weight=torch.rand((config['n_imgs'], config['residual_dim'])) * 0.05
 		)
 
-		self.generator = Generator(
-			latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
-			img_size=config['img_shape'][0]
-		)
+		if config['generator_arch'] == 'betavae':
+			self.generator = BetaVAEGenerator(latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'])
+
+		elif config['generator_arch'] == 'stylegan2':
+			self.generator = StyleGenerator(
+				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
+				img_size=config['img_shape'][0]
+			)
+		else:
+			raise Exception('unsupported generator arch')
 
 
 class Model:
@@ -96,8 +102,14 @@ class Model:
 		self.latent_model = None
 		self.amortized_model = None
 
-		self.vgg_features = VGGFeatures()
-		self.perceptual_loss = VGGDistance(self.vgg_features, config['perceptual_loss']['layers'])
+		if config['loss_reconstruction'] == 'l1':
+			self.reconstruction_loss = nn.L1Loss()  # nn.BCEWithLogitsLoss()
+		elif config['loss_reconstruction'] == 'mse':
+			self.reconstruction_loss = nn.MSELoss()
+		elif config['loss_reconstruction'] == 'perceptual':
+			self.reconstruction_loss = VGGDistance(layer_ids=config['perceptual_loss']['layers'])
+		else:
+			raise Exception('unsupported reconstruction loss')
 
 		self.rs = np.random.RandomState(seed=1337)
 
@@ -167,7 +179,7 @@ class Model:
 		)
 
 		self.latent_model.to(self.device)
-		self.vgg_features.to(self.device)
+		self.reconstruction_loss.to(self.device)
 
 		summary = SummaryWriter(log_dir=tensorboard_dir)
 		for epoch in range(self.config['train']['n_epochs']):
@@ -235,7 +247,7 @@ class Model:
 
 		latent_code_regularized = torch.cat((factor_codes, residual_code_regularized), dim=1)
 		img_reconstructed = self.latent_model.generator(latent_code_regularized)
-		loss_reconstruction = self.perceptual_loss(img_reconstructed, batch['img'])
+		loss_reconstruction = self.reconstruction_loss(img_reconstructed, batch['img'])
 
 		loss_entropy = torch.stack([a.entropy() for a in assignments], dim=1).mean()
 		loss_residual_decay = torch.mean(residual_code ** 2, dim=1).mean()

@@ -10,9 +10,9 @@ from torchvision import models
 from model import ConstantInput, ToRGB, ModulatedConv2d, FusedLeakyReLU
 
 
-class Generator(nn.Module):
+class StyleGenerator(nn.Module):
 
-	def __init__(self, img_size, latent_dim):
+	def __init__(self, latent_dim, img_size):
 		super().__init__()
 
 		channel_multiplier = 2
@@ -87,6 +87,40 @@ class Generator(nn.Module):
 
 		image = skip
 		return image
+
+
+class BetaVAEGenerator(nn.Module):
+
+	def __init__(self, latent_dim):  # img_size=64
+		super().__init__()
+
+		self.fc = nn.Sequential(
+			nn.Linear(in_features=latent_dim, out_features=256),
+			nn.ReLU(),
+
+			nn.Linear(in_features=256, out_features=4*4*64),
+			nn.ReLU()
+		)
+
+		self.convs = nn.Sequential(
+			nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=4, stride=2, padding=1),
+			nn.ReLU(),
+
+			nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2, padding=1),
+			nn.ReLU(),
+
+			nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=4, stride=2, padding=1),
+			nn.ReLU(),
+
+			nn.ConvTranspose2d(in_channels=32, out_channels=3, kernel_size=4, stride=2, padding=1),
+			nn.Sigmoid()
+		)
+
+	def forward(self, latent_code):
+		h = self.fc(latent_code)
+		h = h.view((-1, 64, 4, 4))
+
+		return self.convs(h)
 
 
 class FactorEncoder(nn.Module):
@@ -255,10 +289,10 @@ class VGGFeatures(nn.Module):
 
 class VGGDistance(nn.Module):
 
-	def __init__(self, vgg_features, layer_ids):
+	def __init__(self, layer_ids):
 		super().__init__()
 
-		self.vgg_features = vgg_features
+		self.vgg_features = VGGFeatures()
 		self.layer_ids = layer_ids
 
 	def forward(self, I1, I2):
