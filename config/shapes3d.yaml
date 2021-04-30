@@ -6,32 +6,33 @@ factor_names:
   - wall_color
   - object_color
 
-train_size: 1000
-n_labels_per_factor: 100
+train_size: 20000
+n_labels_per_factor: 1000
 
-factor_dim: 1
-residual_dim: 8
+factor_dim: 8
+residual_dim: 7
 
 residual_std: 1
 
 train:
   batch_size: 64
-  n_epochs: 2
+  n_epochs: 200
+  n_epochs_between_evals: 50
 
   learning_rate:
     latent: 0.01
     generator: 0.001
-#    encoder: 0.001
-    min: 0.00001
+    min: 0.0001
 
   loss_weights:
     reconstruction: 1
-    entropy: 0.1
-    residual_decay: 0.001
+    entropy: 0
+    residual_decay: 0.0001
 
 amortize:
   batch_size: 64
-  n_epochs: 2
+  n_epochs: 100
+  n_epochs_between_evals: 25
 
   learning_rate:
     max: 0.001

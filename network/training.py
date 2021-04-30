@@ -230,7 +230,7 @@ class Model:
 			for term, loss in losses.items():
 				summary.add_scalar(tag='loss/generator/{}'.format(term), scalar_value=loss.item(), global_step=epoch)
 
-			if epoch % 10 == 0:
+			if epoch % self.config['train']['n_epochs_between_evals'] == 0:
 				latent_factors = self.embed_factors(dataset)
 				scores = dci.evaluate(latent_factors, factors)
 
@@ -318,22 +318,22 @@ class Model:
 			for term, loss in losses.items():
 				summary.add_scalar(tag='loss/encoders/{}'.format(term), scalar_value=loss.item(), global_step=epoch)
 
-			if epoch % 10 == 0:
+			if epoch % self.config['amortize']['n_epochs_between_evals'] == 0:
 				latent_factors = self.encode_factors(imgs)
 				scores = dci.evaluate(latent_factors, factors)
 
-				summary.add_scalar(tag='dci/informativeness', scalar_value=scores['informativeness_test'], global_step=epoch)
-				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
-				summary.add_scalar(tag='dci/completeness', scalar_value=scores['completeness'], global_step=epoch)
+				summary.add_scalar(tag='dci/encoders/informativeness', scalar_value=scores['informativeness_test'], global_step=epoch)
+				summary.add_scalar(tag='dci/encoders/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
+				summary.add_scalar(tag='dci/encoders/completeness', scalar_value=scores['completeness'], global_step=epoch)
 
 				latent_residuals = self.encode_residuals(imgs)
 				for factor_idx, factor_name in enumerate(self.config['factor_names']):
 					acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, factor_idx])
-					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+					summary.add_scalar(tag='residual/encoders/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
 
 				for factor_idx, factor_name in enumerate(self.config['residual_factor_names']):
 					acc_train, acc_test = classifier.logistic_regression(latent_residuals, residual_factors[:, factor_idx])
-					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+					summary.add_scalar(tag='residual/encoders/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
 
 			self.save(model_dir)
 
