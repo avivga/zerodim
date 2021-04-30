@@ -123,6 +123,39 @@ class BetaVAEGenerator(nn.Module):
 		return self.convs(h)
 
 
+class BetaVAEEncoder(nn.Module):
+
+	def __init__(self, latent_dim):  # img_size=64
+		super().__init__()
+
+		self.convs = nn.Sequential(
+			nn.Conv2d(in_channels=3, out_channels=32, kernel_size=4, stride=2, padding=1),
+			nn.ReLU(),
+
+			nn.Conv2d(in_channels=32, out_channels=32, kernel_size=4, stride=2, padding=1),
+			nn.ReLU(),
+
+			nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2, stride=2, padding=0),
+			nn.ReLU(),
+
+			nn.Conv2d(in_channels=64, out_channels=64, kernel_size=2, stride=2, padding=0),
+			nn.ReLU(),
+		)
+
+		self.fc = nn.Sequential(
+			nn.Linear(in_features=64*4*4, out_features=256),
+			nn.ReLU(),
+
+			nn.Linear(in_features=256, out_features=latent_dim)
+		)
+
+	def forward(self, img):
+		h = self.convs(img)
+		h = h.view((-1, 64*4*4))
+
+		return self.fc(h)
+
+
 class FactorEncoder(nn.Module):
 
 	def __init__(self, img_shape, latent_dim, dim_in=32, max_conv_dim=128):

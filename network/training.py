@@ -10,10 +10,11 @@ from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.distributions import Categorical
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter
 
-from network.modules import StyleGenerator, BetaVAEGenerator, FactorEncoder, ResidualEncoder, VGGDistance
+from network.modules import BetaVAEGenerator, BetaVAEEncoder
+from network.modules import StyleGenerator, VGGDistance
 from network.utils import NamedTensorDataset
 
 from evaluation import dci, classifier
@@ -136,7 +137,7 @@ class Model:
 		if self.latent_model:
 			torch.save(self.latent_model.state_dict(), os.path.join(checkpoint_dir, 'latent.pth'))
 
-	def train(self, imgs, factors, label_masks, model_dir, tensorboard_dir):
+	def train_latent_model(self, imgs, factors, label_masks, model_dir, tensorboard_dir):
 		self.latent_model = LatentModel(self.config)
 
 		data = dict(
@@ -162,10 +163,6 @@ class Model:
 
 				'lr': self.config['train']['learning_rate']['latent']
 			},
-			# {
-			# 	'params': self.latent_model.factor_model.factor_encoders.parameters(),
-			# 	'lr': self.config['train']['learning_rate']['encoder']
-			# },
 			{
 				'params': self.latent_model.generator.parameters(),
 				'lr': self.config['train']['learning_rate']['generator']
@@ -189,7 +186,7 @@ class Model:
 			for batch in pbar:
 				batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
 
-				losses = self.train_latent_generator(batch)
+				losses = self.iterate_latent_model(batch)
 				loss_total = 0
 				for term, loss in losses.items():
 					loss_total += self.config['train']['loss_weights'][term] * loss
@@ -210,8 +207,8 @@ class Model:
 				summary.add_scalar(tag='loss/generator/{}'.format(term), scalar_value=loss.item(), global_step=epoch)
 
 			if epoch % 10 == 0:
-				latent_factors = self.encode_factors(dataset)
-				scores = dci.compute_dci(latent_factors, factors)
+				latent_factors = self.embed_factors(dataset)
+				scores = dci.evaluate(latent_factors, factors)
 
 				summary.add_scalar(tag='dci/informativeness', scalar_value=scores['informativeness_test'], global_step=epoch)
 				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
@@ -233,7 +230,72 @@ class Model:
 
 		summary.close()
 
-	def train_latent_generator(self, batch):
+	def train_factor_encoders(self, imgs, factors, label_masks, model_dir, tensorboard_dir):
+		self.latent_model.factor_encoders = nn.ModuleList([
+			BetaVAEEncoder(latent_dim=self.config['factor_dim'])
+			for _ in range(self.config['n_factors'])
+		])
+
+		data = dict(
+			img=torch.from_numpy(imgs).permute(0, 3, 1, 2),
+			img_id=torch.from_numpy(np.arange(imgs.shape[0])),
+			factors=torch.from_numpy(factors.astype(np.int64)),
+			label_masks=torch.from_numpy(label_masks.astype(np.bool))
+		)
+
+		dataset = NamedTensorDataset(data)
+		data_loader = DataLoader(
+			dataset, batch_size=self.config['train_encoders']['batch_size'],
+			shuffle=True, pin_memory=True, drop_last=False
+		)
+
+		optimizer = Adam(
+			params=self.latent_model.factor_encoders.parameters(),
+			lr=self.config['train_encoders']['learning_rate']['max']
+		)
+
+		scheduler = CosineAnnealingLR(
+			optimizer,
+			T_max=self.config['train_encoders']['n_epochs'] * len(data_loader),
+			eta_min=self.config['train_encoders']['learning_rate']['min']
+		)
+
+		self.latent_model.to(self.device)
+
+		summary = SummaryWriter(log_dir=tensorboard_dir)
+		for epoch in range(self.config['train_encoders']['n_epochs']):
+			self.latent_model.train()
+
+			pbar = tqdm(iterable=data_loader)
+			for batch in pbar:
+				batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
+				loss = self.iterate_factor_encoders(batch)
+
+				optimizer.zero_grad()
+				loss.backward()
+				optimizer.step()
+				scheduler.step()
+
+				pbar.set_description_str('epoch #{}'.format(epoch))
+				pbar.set_postfix(loss=loss.item())
+
+			pbar.close()
+
+			summary.add_scalar(tag='loss/factor_encoders', scalar_value=loss.item(), global_step=epoch)
+
+			if epoch % 10 == 0:
+				latent_factors = self.encode_factors(imgs)
+				scores = dci.evaluate(latent_factors, factors)
+
+				summary.add_scalar(tag='dci/informativeness', scalar_value=scores['informativeness_test'], global_step=epoch)
+				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
+				summary.add_scalar(tag='dci/completeness', scalar_value=scores['completeness'], global_step=epoch)
+
+			self.save(model_dir)
+
+		summary.close()
+
+	def iterate_latent_model(self, batch):
 		factor_codes, assignments = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
 		residual_code = self.latent_model.residual_embeddings(batch['img_id'])
 
@@ -258,8 +320,15 @@ class Model:
 			'residual_decay': loss_residual_decay
 		}
 
+	def iterate_factor_encoders(self, batch):
+		factor_codes_target, _ = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
+		factor_codes = torch.cat([self.latent_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+
+		loss = torch.mean((factor_codes - factor_codes_target) ** 2, dim=1).mean()
+		return loss
+
 	@torch.no_grad()
-	def encode_factors(self, dataset):
+	def embed_factors(self, dataset):
 		self.latent_model.eval()
 
 		codes = []
@@ -268,6 +337,22 @@ class Model:
 			batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
 
 			batch_codes, _ = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
+			codes.append(batch_codes.cpu())
+
+		codes = torch.cat(codes, dim=0)
+		return torch.stack(torch.split(codes, split_size_or_sections=self.config['factor_dim'], dim=1), dim=1).numpy()
+
+	@torch.no_grad()
+	def encode_factors(self, imgs):
+		self.latent_model.eval()
+
+		codes = []
+		dataset = TensorDataset(torch.from_numpy(imgs).permute(0, 3, 1, 2))
+		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
+		for batch in data_loader:
+			factor_codes = [self.latent_model.factor_encoders[f](batch[0].to(self.device)) for f in range(self.config['n_factors'])]
+			batch_codes = torch.cat(factor_codes, dim=1)
+
 			codes.append(batch_codes.cpu())
 
 		codes = torch.cat(codes, dim=0)

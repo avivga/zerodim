@@ -7,7 +7,7 @@ from sklearn import ensemble
 from sklearn.model_selection import train_test_split
 
 
-def compute_dci(latents, factors):
+def evaluate(latents, factors):
 	latents_train, latents_test, factors_train, factors_test = train_test_split(latents, factors, test_size=0.2, random_state=1337)
 
 	importance_matrix, acc_train, acc_test = compute_importance_gbt(

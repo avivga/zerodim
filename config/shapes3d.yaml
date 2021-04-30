@@ -6,7 +6,8 @@ factor_names:
   - wall_color
   - object_color
 
-label_ratio: 0.1
+train_size: 1000 #50000
+label_ratio: 0.01
 
 factor_dim: 1
 residual_dim: 8
@@ -15,7 +16,7 @@ residual_std: 1
 
 train:
   batch_size: 64
-  n_epochs: 200
+  n_epochs: 2
 
   learning_rate:
     latent: 0.01
@@ -27,3 +28,11 @@ train:
     reconstruction: 1
     entropy: 0.1
     residual_decay: 0.001
+
+train_encoders:
+  batch_size: 64
+  n_epochs: 2
+
+  learning_rate:
+    max: 0.001
+    min: 0.00001

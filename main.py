@@ -1,12 +1,14 @@
 import argparse
 import os
 import yaml
+import json
 
 import numpy as np
 
 import data
 from assets import AssetManager
 from network.training import Model
+from evaluation import dci
 
 
 def preprocess(args, extras=[]):
@@ -22,6 +24,7 @@ def train_synthetic(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.data_name, args.model_name)
+	eval_dir = assets.recreate_eval_dir(args.data_name, args.model_name)
 
 	with open(os.path.join(os.path.dirname(__file__), 'config', '{}.yaml'.format(args.config)), 'r') as config_fp:
 		config = yaml.safe_load(config_fp)
@@ -32,20 +35,30 @@ def train_synthetic(args):
 	labeled_factors_ids = [np.where(data['factor_names'] == factor_name)[0][0] for factor_name in config['factor_names']]
 	factors = data['factors'][:, labeled_factors_ids]
 
+	rs = np.random.RandomState(seed=0)
+	train_idx = rs.choice(imgs.shape[0], size=config['train_size'], replace=False)
+
 	# TODO: separate partial N and incomplete D
-	label_masks = (np.random.rand(*factors.shape) < config['label_ratio'])
+	# TODO: track and eval reisdual factor informativeness
+
+	rs = np.random.RandomState(seed=0)
+	label_masks = (rs.rand(*factors[train_idx].shape) < config['label_ratio'])
 
 	config.update({
-		'img_shape': imgs.shape[1:],
-		'n_imgs': imgs.shape[0],
+		'img_shape': imgs[train_idx].shape[1:],
+		'n_imgs': imgs[train_idx].shape[0],
 		'n_factors': len(labeled_factors_ids),
 		'factor_sizes': data['factor_sizes'][labeled_factors_ids]
 	})
 
 	model = Model(config)
-	model.train(imgs, factors, label_masks, model_dir, tensorboard_dir)
+	model.train_latent_model(imgs[train_idx], factors[train_idx], label_masks, model_dir, tensorboard_dir)
+	model.train_factor_encoders(imgs[train_idx], factors[train_idx], label_masks, model_dir, tensorboard_dir)
 
-	# TODO: amortize and log results
+	latent_factors = model.encode_factors(imgs)
+	scores = dci.evaluate(latent_factors, factors)
+	with open(os.path.join(eval_dir, 'dci.json'), 'w') as fp:
+		json.dump(scores, fp)
 
 
 # def train(args):
