@@ -1,6 +1,7 @@
 import os
 import itertools
 import pickle
+import json
 from tqdm import tqdm
 
 import numpy as np
@@ -92,6 +93,21 @@ class LatentModel(nn.Module):
 			raise Exception('unsupported generator arch')
 
 
+class AmortizedModel(nn.Module):
+
+	def __init__(self, config):
+		super().__init__()
+
+		self.config = config
+
+		self.factor_encoders = nn.ModuleList([
+			BetaVAEEncoder(latent_dim=config['factor_dim'])
+			for _ in range(config['n_factors'])
+		])
+
+		self.residual_encoder = BetaVAEEncoder(latent_dim=config['residual_dim'])
+
+
 class Model:
 
 	def __init__(self, config):
@@ -125,6 +141,10 @@ class Model:
 			model.latent_model = LatentModel(config)
 			model.latent_model.load_state_dict(torch.load(os.path.join(checkpoint_dir, 'latent.pth')))
 
+		if os.path.exists(os.path.join(checkpoint_dir, 'amortized.pth')):
+			model.amortized_model = AmortizedModel(config)
+			model.amortized_model.load_state_dict(torch.load(os.path.join(checkpoint_dir, 'amortized.pth')))
+
 		return model
 
 	def save(self, checkpoint_dir):
@@ -137,13 +157,17 @@ class Model:
 		if self.latent_model:
 			torch.save(self.latent_model.state_dict(), os.path.join(checkpoint_dir, 'latent.pth'))
 
-	def train_latent_model(self, imgs, factors, label_masks, model_dir, tensorboard_dir):
+		if self.amortized_model:
+			torch.save(self.amortized_model.state_dict(), os.path.join(checkpoint_dir, 'amortized.pth'))
+
+	def train_latent_model(self, imgs, factors, label_masks, residual_factors, model_dir, tensorboard_dir):
 		self.latent_model = LatentModel(self.config)
 
 		data = dict(
 			img=torch.from_numpy(imgs).permute(0, 3, 1, 2),
 			img_id=torch.from_numpy(np.arange(imgs.shape[0])),
 			factors=torch.from_numpy(factors.astype(np.int64)),
+			residual_factors=torch.from_numpy(residual_factors.astype(np.int64)),
 			label_masks=torch.from_numpy(label_masks.astype(np.bool))
 		)
 
@@ -214,10 +238,14 @@ class Model:
 				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
 				summary.add_scalar(tag='dci/completeness', scalar_value=scores['completeness'], global_step=epoch)
 
-				latent_residuals = self.encode_residuals(dataset)
+				latent_residuals = self.embed_residuals(dataset)
 				for factor_idx, factor_name in enumerate(self.config['factor_names']):
 					acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, factor_idx])
-					summary.add_scalar(tag='residual/{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+
+				for factor_idx, factor_name in enumerate(self.config['residual_factor_names']):
+					acc_train, acc_test = classifier.logistic_regression(latent_residuals, residual_factors[:, factor_idx])
+					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
 
 			for factor_idx, factor_name in enumerate(self.config['factor_names']):
 				figure_fixed = self.visualize_translation(dataset, factor_idx, randomized=False)
@@ -230,58 +258,65 @@ class Model:
 
 		summary.close()
 
-	def train_factor_encoders(self, imgs, factors, label_masks, model_dir, tensorboard_dir):
-		self.latent_model.factor_encoders = nn.ModuleList([
-			BetaVAEEncoder(latent_dim=self.config['factor_dim'])
-			for _ in range(self.config['n_factors'])
-		])
+	def train_encoders(self, imgs, factors, label_masks, residual_factors, model_dir, tensorboard_dir):
+		self.amortized_model = AmortizedModel(self.config)
 
 		data = dict(
 			img=torch.from_numpy(imgs).permute(0, 3, 1, 2),
 			img_id=torch.from_numpy(np.arange(imgs.shape[0])),
 			factors=torch.from_numpy(factors.astype(np.int64)),
+			residual_factors=torch.from_numpy(residual_factors.astype(np.int64)),
 			label_masks=torch.from_numpy(label_masks.astype(np.bool))
 		)
 
 		dataset = NamedTensorDataset(data)
 		data_loader = DataLoader(
-			dataset, batch_size=self.config['train_encoders']['batch_size'],
+			dataset, batch_size=self.config['amortize']['batch_size'],
 			shuffle=True, pin_memory=True, drop_last=False
 		)
 
 		optimizer = Adam(
-			params=self.latent_model.factor_encoders.parameters(),
-			lr=self.config['train_encoders']['learning_rate']['max']
+			params=self.amortized_model.parameters(),
+			lr=self.config['amortize']['learning_rate']['max']
 		)
 
 		scheduler = CosineAnnealingLR(
 			optimizer,
-			T_max=self.config['train_encoders']['n_epochs'] * len(data_loader),
-			eta_min=self.config['train_encoders']['learning_rate']['min']
+			T_max=self.config['amortize']['n_epochs'] * len(data_loader),
+			eta_min=self.config['amortize']['learning_rate']['min']
 		)
 
 		self.latent_model.to(self.device)
+		self.amortized_model.to(self.device)
 
 		summary = SummaryWriter(log_dir=tensorboard_dir)
-		for epoch in range(self.config['train_encoders']['n_epochs']):
+		for epoch in range(self.config['amortize']['n_epochs']):
 			self.latent_model.train()
+			self.amortized_model.train()
 
 			pbar = tqdm(iterable=data_loader)
 			for batch in pbar:
 				batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
-				loss = self.iterate_factor_encoders(batch)
+
+				losses = self.iterate_encoders(batch)
+				loss_total = 0
+				for term, loss in losses.items():
+					loss_total += loss
 
 				optimizer.zero_grad()
-				loss.backward()
+				loss_total.backward()
 				optimizer.step()
 				scheduler.step()
 
 				pbar.set_description_str('epoch #{}'.format(epoch))
-				pbar.set_postfix(loss=loss.item())
+				pbar.set_postfix(loss=loss_total.item())
 
 			pbar.close()
 
-			summary.add_scalar(tag='loss/factor_encoders', scalar_value=loss.item(), global_step=epoch)
+			summary.add_scalar(tag='loss/encoders', scalar_value=loss_total.item(), global_step=epoch)
+
+			for term, loss in losses.items():
+				summary.add_scalar(tag='loss/encoders/{}'.format(term), scalar_value=loss.item(), global_step=epoch)
 
 			if epoch % 10 == 0:
 				latent_factors = self.encode_factors(imgs)
@@ -291,9 +326,37 @@ class Model:
 				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
 				summary.add_scalar(tag='dci/completeness', scalar_value=scores['completeness'], global_step=epoch)
 
+				latent_residuals = self.encode_residuals(imgs)
+				for factor_idx, factor_name in enumerate(self.config['factor_names']):
+					acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, factor_idx])
+					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+
+				for factor_idx, factor_name in enumerate(self.config['residual_factor_names']):
+					acc_train, acc_test = classifier.logistic_regression(latent_residuals, residual_factors[:, factor_idx])
+					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+
 			self.save(model_dir)
 
 		summary.close()
+
+	def evaluate(self, imgs, factors, residual_factors, eval_dir):
+		latent_factors = self.encode_factors(imgs)
+		scores = dci.evaluate(latent_factors, factors)
+		with open(os.path.join(eval_dir, 'dci.json'), 'w') as fp:
+			json.dump(scores, fp)
+
+		latent_residuals = self.encode_residuals(imgs)
+		scores_residual = {}
+		for f, factor_name in enumerate(self.config['factor_names']):
+			acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, f])
+			scores_residual[factor_name] = acc_test
+
+		for f, factor_name in enumerate(self.config['residual_factor_names']):
+			acc_train, acc_test = classifier.logistic_regression(latent_residuals, residual_factors[:, f])
+			scores_residual[factor_name] = acc_test
+
+		with open(os.path.join(eval_dir, 'residual.json'), 'w') as fp:
+			json.dump(scores_residual, fp)
 
 	def iterate_latent_model(self, batch):
 		factor_codes, assignments = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
@@ -320,12 +383,19 @@ class Model:
 			'residual_decay': loss_residual_decay
 		}
 
-	def iterate_factor_encoders(self, batch):
+	def iterate_encoders(self, batch):
 		factor_codes_target, _ = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
-		factor_codes = torch.cat([self.latent_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+		factor_codes = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+		loss_factors = torch.mean((factor_codes - factor_codes_target) ** 2, dim=1).mean()
 
-		loss = torch.mean((factor_codes - factor_codes_target) ** 2, dim=1).mean()
-		return loss
+		residual_code_target = self.latent_model.residual_embeddings(batch['img_id'])
+		residual_code = self.amortized_model.residual_encoder(batch['img'])
+		loss_residual = torch.mean((residual_code - residual_code_target) ** 2, dim=1).mean()
+
+		return {
+			'factors': loss_factors,
+			'residual': loss_residual
+		}
 
 	@torch.no_grad()
 	def embed_factors(self, dataset):
@@ -344,13 +414,13 @@ class Model:
 
 	@torch.no_grad()
 	def encode_factors(self, imgs):
-		self.latent_model.eval()
+		self.amortized_model.eval()
 
 		codes = []
 		dataset = TensorDataset(torch.from_numpy(imgs).permute(0, 3, 1, 2))
 		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
 		for batch in data_loader:
-			factor_codes = [self.latent_model.factor_encoders[f](batch[0].to(self.device)) for f in range(self.config['n_factors'])]
+			factor_codes = [self.amortized_model.factor_encoders[f](batch[0].to(self.device)) for f in range(self.config['n_factors'])]
 			batch_codes = torch.cat(factor_codes, dim=1)
 
 			codes.append(batch_codes.cpu())
@@ -359,7 +429,7 @@ class Model:
 		return torch.stack(torch.split(codes, split_size_or_sections=self.config['factor_dim'], dim=1), dim=1).numpy()
 
 	@torch.no_grad()
-	def encode_residuals(self, dataset):
+	def embed_residuals(self, dataset):
 		self.latent_model.eval()
 
 		codes = []
@@ -371,7 +441,21 @@ class Model:
 			codes.append(batch_codes.cpu())
 
 		codes = torch.cat(codes, dim=0)
-		return codes
+		return codes.numpy()
+
+	@torch.no_grad()
+	def encode_residuals(self, imgs):
+		self.amortized_model.eval()
+
+		codes = []
+		dataset = TensorDataset(torch.from_numpy(imgs).permute(0, 3, 1, 2))
+		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
+		for batch in data_loader:
+			batch_codes = self.amortized_model.residual_encoder(batch[0].to(self.device))
+			codes.append(batch_codes.cpu())
+
+		codes = torch.cat(codes, dim=0)
+		return codes.numpy()
 
 	@torch.no_grad()
 	def visualize_translation(self, dataset, factor_idx, n_samples=10, randomized=False, amortized=False):

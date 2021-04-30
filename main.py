@@ -1,14 +1,12 @@
 import argparse
 import os
 import yaml
-import json
 
 import numpy as np
 
 import data
 from assets import AssetManager
 from network.training import Model
-from evaluation import dci
 
 
 def preprocess(args, extras=[]):
@@ -32,14 +30,16 @@ def train_synthetic(args):
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
 	imgs = data['imgs'].astype(np.float32) / 255.0
 
-	labeled_factors_ids = [np.where(data['factor_names'] == factor_name)[0][0] for factor_name in config['factor_names']]
+	labeled_factors_ids = [data['factor_names'].tolist().index(factor_name) for factor_name in config['factor_names']]
+	residual_factor_ids = [f for f in range(len(data['factor_sizes'])) if f not in labeled_factors_ids]
+
 	factors = data['factors'][:, labeled_factors_ids]
+	residual_factors = data['factors'][:, residual_factor_ids]
 
 	rs = np.random.RandomState(seed=0)
 	train_idx = rs.choice(imgs.shape[0], size=config['train_size'], replace=False)
 
 	# TODO: separate partial N and incomplete D
-	# TODO: track and eval reisdual factor informativeness
 
 	rs = np.random.RandomState(seed=0)
 	label_masks = np.zeros_like(factors[train_idx]).astype(np.bool)
@@ -51,17 +51,15 @@ def train_synthetic(args):
 		'img_shape': imgs[train_idx].shape[1:],
 		'n_imgs': imgs[train_idx].shape[0],
 		'n_factors': len(labeled_factors_ids),
-		'factor_sizes': data['factor_sizes'][labeled_factors_ids]
+		'factor_sizes': data['factor_sizes'][labeled_factors_ids],
+		'residual_factor_sizes': data['factor_sizes'][residual_factor_ids],
+		'residual_factor_names': data['factor_names'][residual_factor_ids]
 	})
 
 	model = Model(config)
-	model.train_latent_model(imgs[train_idx], factors[train_idx], label_masks, model_dir, tensorboard_dir)
-	model.train_factor_encoders(imgs[train_idx], factors[train_idx], label_masks, model_dir, tensorboard_dir)
-
-	latent_factors = model.encode_factors(imgs)
-	scores = dci.evaluate(latent_factors, factors)
-	with open(os.path.join(eval_dir, 'dci.json'), 'w') as fp:
-		json.dump(scores, fp)
+	model.train_latent_model(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, tensorboard_dir)
+	model.train_encoders(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, tensorboard_dir)
+	model.evaluate(imgs, factors, residual_factors, eval_dir)
 
 
 # def train(args):

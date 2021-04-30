@@ -29,7 +29,7 @@ train:
     entropy: 0.1
     residual_decay: 0.001
 
-train_encoders:
+amortize:
   batch_size: 64
   n_epochs: 2
 
