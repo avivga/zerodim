@@ -35,7 +35,10 @@ def compute_importance_gbt(x_train, x_test, y_train, y_test):
 	acc_train = []
 	acc_test = []
 
-	for i in tqdm(range(n_factors)):
+	pbar = tqdm(range(n_factors))
+	for i in pbar:
+		pbar.set_description_str('[dci] factor #{}/#{}'.format(i + 1, n_factors))
+
 		model = ensemble.GradientBoostingClassifier()
 		model.fit(x_train.reshape(x_train.shape[0], -1), y_train[:, i])
 
