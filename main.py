@@ -42,7 +42,10 @@ def train_synthetic(args):
 	# TODO: track and eval reisdual factor informativeness
 
 	rs = np.random.RandomState(seed=0)
-	label_masks = (rs.rand(*factors[train_idx].shape) < config['label_ratio'])
+	label_masks = np.zeros_like(factors[train_idx]).astype(np.bool)
+	for f in range(factors.shape[1]):
+		idx = rs.choice(config['train_size'], size=config['n_labels_per_factor'], replace=False)
+		label_masks[idx, f] = True
 
 	config.update({
 		'img_shape': imgs[train_idx].shape[1:],

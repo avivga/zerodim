@@ -6,8 +6,8 @@ factor_names:
   - wall_color
   - object_color
 
-train_size: 1000 #50000
-label_ratio: 0.01
+train_size: 1000
+n_labels_per_factor: 100
 
 factor_dim: 1
 residual_dim: 8
