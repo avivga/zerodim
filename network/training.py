@@ -55,9 +55,13 @@ class FactorModel(nn.Module):
 		for f in range(self.config['n_factors']):
 			assignment = Categorical(logits=self.img_factor_embeddings[f](img_id))
 
+			with torch.no_grad():
+				factor_values = torch.arange(self.config['factor_sizes'][f], dtype=torch.int64).to(img_id.device)
+				factor_embeddings = self.factor_embeddings[f](factor_values)
+
 			factor_code = (
 				self.factor_embeddings[f](factors[:, f]) * label_masks[:, [f]]
-				+ torch.matmul(assignment.probs, self.factor_embeddings[f].weight) * (~label_masks[:, [f]])
+				+ torch.matmul(assignment.probs, factor_embeddings) * (~label_masks[:, [f]])
 			)
 
 			assignments.append(assignment)
@@ -124,7 +128,7 @@ class Model:
 		elif config['loss_reconstruction'] == 'mse':
 			self.reconstruction_loss = nn.MSELoss()
 		elif config['loss_reconstruction'] == 'perceptual':
-			self.reconstruction_loss = VGGDistance(layer_ids=config['perceptual_loss']['layers'])
+			self.reconstruction_loss = VGGDistance(layer_ids=config['perceptual_loss'])
 		else:
 			raise Exception('unsupported reconstruction loss')
 
@@ -213,6 +217,9 @@ class Model:
 				losses = self.iterate_latent_model(batch)
 				loss_total = 0
 				for term, loss in losses.items():
+					if term == 'entropy' and epoch < self.config['train']['n_epochs_before_entropy']:
+						continue
+
 					loss_total += self.config['train']['loss_weights'][term] * loss
 
 				optimizer.zero_grad()
