@@ -111,6 +111,17 @@ class AmortizedModel(nn.Module):
 
 		self.residual_encoder = BetaVAEEncoder(latent_dim=config['residual_dim'])
 
+		if config['generator_arch'] == 'betavae':
+			self.generator = BetaVAEGenerator(latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'])
+
+		elif config['generator_arch'] == 'stylegan2':
+			self.generator = StyleGenerator(
+				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
+				img_size=config['img_shape'][0]
+			)
+		else:
+			raise Exception('unsupported generator arch')
+
 
 class Model:
 
@@ -303,6 +314,7 @@ class Model:
 
 	def train_encoders(self, imgs, factors, label_masks, residual_factors, model_dir, tensorboard_dir):
 		self.amortized_model = AmortizedModel(self.config)
+		self.amortized_model.generator.load_state_dict(self.latent_model.generator.state_dict())
 
 		data = dict(
 			img=torch.from_numpy(imgs).permute(0, 3, 1, 2),
