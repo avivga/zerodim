@@ -214,7 +214,7 @@ class Model:
 		self.reconstruction_loss.to(self.device)
 
 		summary = SummaryWriter(log_dir=tensorboard_dir)
-		for epoch in range(self.config['train']['n_epochs']):
+		for epoch in range(self.config['train']['n_epochs'] + 1):
 			self.latent_model.train()
 
 			pbar = tqdm(iterable=data_loader)
@@ -264,10 +264,10 @@ class Model:
 			summary.add_scalar(tag='loss/supervised', scalar_value=loss_supervised.item(), global_step=epoch)
 
 			for term, val in losses_unsupervised.items():
-				summary.add_scalar(tag='loss-unsupervised/{}'.format(term), scalar_value=val.item(), global_step=epoch)
+				summary.add_scalar(tag='loss/unsupervised/{}'.format(term), scalar_value=val.item(), global_step=epoch)
 
 			for term, val in losses_supervised.items():
-				summary.add_scalar(tag='loss-supervised/{}'.format(term), scalar_value=val.item(), global_step=epoch)
+				summary.add_scalar(tag='loss/supervised/{}'.format(term), scalar_value=val.item(), global_step=epoch)
 
 			if epoch % self.config['train']['n_epochs_between_evals'] == 0:
 				latent_factors = self.embed_factors(dataset)
@@ -286,15 +286,16 @@ class Model:
 					acc_train, acc_test = classifier.logistic_regression(latent_residuals, residual_factors[:, factor_idx])
 					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
 
-			figure = self.visualize_reconstruction(dataset)
-			summary.add_image(tag='reconstruction', img_tensor=figure, global_step=epoch)
+			if epoch % self.config['train']['n_epochs_between_visualizations'] == 0:
+				figure = self.visualize_reconstruction(dataset)
+				summary.add_image(tag='reconstruction', img_tensor=figure, global_step=epoch)
 
-			for factor_idx, factor_name in enumerate(self.config['factor_names']):
-				figure_fixed = self.visualize_translation(dataset, factor_idx, randomized=False)
-				figure_random = self.visualize_translation(dataset, factor_idx, randomized=True)
+				for factor_idx, factor_name in enumerate(self.config['factor_names']):
+					figure_fixed = self.visualize_translation(dataset, factor_idx, randomized=False)
+					figure_random = self.visualize_translation(dataset, factor_idx, randomized=True)
 
-				summary.add_image(tag='{}-fixed'.format(factor_name), img_tensor=figure_fixed, global_step=epoch)
-				summary.add_image(tag='{}-random'.format(factor_name), img_tensor=figure_random, global_step=epoch)
+					summary.add_image(tag='{}-fixed'.format(factor_name), img_tensor=figure_fixed, global_step=epoch)
+					summary.add_image(tag='{}-random'.format(factor_name), img_tensor=figure_random, global_step=epoch)
 
 			self.save(model_dir)
 
@@ -332,7 +333,7 @@ class Model:
 		self.amortized_model.to(self.device)
 
 		summary = SummaryWriter(log_dir=tensorboard_dir)
-		for epoch in range(self.config['amortize']['n_epochs']):
+		for epoch in range(self.config['amortize']['n_epochs'] + 1):
 			self.latent_model.train()
 			self.amortized_model.train()
 
@@ -364,18 +365,29 @@ class Model:
 				latent_factors = self.encode_factors(imgs)
 				scores = dci.evaluate(latent_factors, factors)
 
-				summary.add_scalar(tag='dci/encoders/informativeness', scalar_value=scores['informativeness_test'], global_step=epoch)
-				summary.add_scalar(tag='dci/encoders/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
-				summary.add_scalar(tag='dci/encoders/completeness', scalar_value=scores['completeness'], global_step=epoch)
+				summary.add_scalar(tag='dci/informativeness', scalar_value=scores['informativeness_test'], global_step=epoch)
+				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
+				summary.add_scalar(tag='dci/completeness', scalar_value=scores['completeness'], global_step=epoch)
 
 				latent_residuals = self.encode_residuals(imgs)
 				for factor_idx, factor_name in enumerate(self.config['factor_names']):
 					acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, factor_idx])
-					summary.add_scalar(tag='residual/encoders/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
 
 				for factor_idx, factor_name in enumerate(self.config['residual_factor_names']):
 					acc_train, acc_test = classifier.logistic_regression(latent_residuals, residual_factors[:, factor_idx])
-					summary.add_scalar(tag='residual/encoders/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+
+			if epoch % self.config['amortize']['n_epochs_between_visualizations'] == 0:
+				figure = self.visualize_reconstruction(dataset, amortized=True)
+				summary.add_image(tag='reconstruction', img_tensor=figure, global_step=epoch)
+
+				for factor_idx, factor_name in enumerate(self.config['factor_names']):
+					figure_fixed = self.visualize_translation(dataset, factor_idx, randomized=False, amortized=True)
+					figure_random = self.visualize_translation(dataset, factor_idx, randomized=True, amortized=True)
+
+					summary.add_image(tag='{}-fixed'.format(factor_name), img_tensor=figure_fixed, global_step=epoch)
+					summary.add_image(tag='{}-random'.format(factor_name), img_tensor=figure_random, global_step=epoch)
 
 			self.save(model_dir)
 
@@ -508,7 +520,9 @@ class Model:
 
 		if amortized:
 			self.amortized_model.eval()
-			pass
+
+			batch['factor_codes'] = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+			batch['residual_code'] = self.amortized_model.residual_encoder(batch['img'])
 
 		else:
 			self.latent_model.eval()
@@ -546,7 +560,9 @@ class Model:
 
 		if amortized:
 			self.amortized_model.eval()
-			pass
+
+			batch['factor_codes'] = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+			batch['residual_code'] = self.amortized_model.residual_encoder(batch['img'])
 
 		else:
 			self.latent_model.eval()

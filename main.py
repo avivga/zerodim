@@ -58,7 +58,11 @@ def train_synthetic(args):
 
 	model = Model(config)
 	model.train_latent_model(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, tensorboard_dir)
-	model.train_encoders(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, tensorboard_dir)
+
+	amortized_tensorboard_dir = os.path.join(tensorboard_dir, 'amortized')
+	os.mkdir(amortized_tensorboard_dir)
+	model.train_encoders(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, amortized_tensorboard_dir)
+
 	model.evaluate(imgs, factors, residual_factors, eval_dir)
 
 

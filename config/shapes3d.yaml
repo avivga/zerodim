@@ -18,6 +18,7 @@ train:
   batch_size: 128
   n_epochs: 200
   n_epochs_between_evals: 50
+  n_epochs_between_visualizations: 10
   n_epochs_before_entropy: 20
 
   learning_rate:
@@ -35,6 +36,7 @@ amortize:
   batch_size: 128
   n_epochs: 200
   n_epochs_between_evals: 50
+  n_epochs_between_visualizations: 10
 
   learning_rate:
     max: 0.001
