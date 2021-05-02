@@ -1,0 +1,43 @@
+generator_arch: betavae
+loss_reconstruction: mse
+
+factor_names:
+  - elevation
+  - azimuth
+  - lighting
+
+train_size: 48600
+n_labels_per_factor: 1000
+
+factor_dim: 1
+residual_dim: 7
+
+residual_std: 1
+
+train:
+  batch_size: 128
+  n_epochs: 200
+  n_epochs_between_evals: 50
+  n_epochs_between_visualizations: 10
+  n_epochs_before_entropy: 20
+
+  learning_rate:
+    latent: 0.01
+    generator: 0.001
+    min: 0.0001
+
+  loss_weights:
+    reconstruction: 1
+    entropy: 0.01
+    residual_decay: 0.0001
+    supervised: 10
+
+amortize:
+  batch_size: 128
+  n_epochs: 200
+  n_epochs_between_evals: 50
+  n_epochs_between_visualizations: 10
+
+  learning_rate:
+    max: 0.001
+    min: 0.00001
