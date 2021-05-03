@@ -8,8 +8,8 @@ factor_names:
 train_size: 17568
 n_labels_per_factor: 1000
 
-factor_dim: 4
-residual_dim: 8
+factor_dim: 8
+residual_dim: 16
 
 residual_std: 1
 
