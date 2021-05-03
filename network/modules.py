@@ -91,7 +91,7 @@ class StyleGenerator(nn.Module):
 
 class BetaVAEGenerator(nn.Module):
 
-	def __init__(self, latent_dim):  # img_size=64
+	def __init__(self, latent_dim, n_channels):  # img_size=64
 		super().__init__()
 
 		self.fc = nn.Sequential(
@@ -112,7 +112,7 @@ class BetaVAEGenerator(nn.Module):
 			nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=4, stride=2, padding=1),
 			nn.ReLU(),
 
-			nn.ConvTranspose2d(in_channels=32, out_channels=3, kernel_size=4, stride=2, padding=1),
+			nn.ConvTranspose2d(in_channels=32, out_channels=n_channels, kernel_size=4, stride=2, padding=1),
 			nn.Sigmoid()
 		)
 
@@ -125,11 +125,11 @@ class BetaVAEGenerator(nn.Module):
 
 class BetaVAEEncoder(nn.Module):
 
-	def __init__(self, latent_dim):  # img_size=64
+	def __init__(self, n_channels, latent_dim):  # img_size=64
 		super().__init__()
 
 		self.convs = nn.Sequential(
-			nn.Conv2d(in_channels=3, out_channels=32, kernel_size=4, stride=2, padding=1),
+			nn.Conv2d(in_channels=n_channels, out_channels=32, kernel_size=4, stride=2, padding=1),
 			nn.ReLU(),
 
 			nn.Conv2d(in_channels=32, out_channels=32, kernel_size=4, stride=2, padding=1),

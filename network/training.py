@@ -86,7 +86,10 @@ class LatentModel(nn.Module):
 		)
 
 		if config['generator_arch'] == 'betavae':
-			self.generator = BetaVAEGenerator(latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'])
+			self.generator = BetaVAEGenerator(
+				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
+				n_channels=config['img_shape'][-1]
+			)
 
 		elif config['generator_arch'] == 'stylegan2':
 			self.generator = StyleGenerator(
@@ -105,14 +108,17 @@ class AmortizedModel(nn.Module):
 		self.config = config
 
 		self.factor_encoders = nn.ModuleList([
-			BetaVAEEncoder(latent_dim=config['factor_dim'])
+			BetaVAEEncoder(n_channels=config['img_shape'][-1], latent_dim=config['factor_dim'])
 			for _ in range(config['n_factors'])
 		])
 
-		self.residual_encoder = BetaVAEEncoder(latent_dim=config['residual_dim'])
+		self.residual_encoder = BetaVAEEncoder(n_channels=config['img_shape'][-1], latent_dim=config['residual_dim'])
 
 		if config['generator_arch'] == 'betavae':
-			self.generator = BetaVAEGenerator(latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'])
+			self.generator = BetaVAEGenerator(
+				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
+				n_channels=config['img_shape'][-1]
+			)
 
 		elif config['generator_arch'] == 'stylegan2':
 			self.generator = StyleGenerator(
