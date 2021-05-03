@@ -140,8 +140,10 @@ class Model:
 		self.latent_model = None
 		self.amortized_model = None
 
-		if config['loss_reconstruction'] == 'l1':
-			self.reconstruction_loss = nn.L1Loss()  # nn.BCEWithLogitsLoss()
+		if config['loss_reconstruction'] == 'bce':
+			self.reconstruction_loss = nn.BCELoss()
+		elif config['loss_reconstruction'] == 'l1':
+			self.reconstruction_loss = nn.L1Loss()
 		elif config['loss_reconstruction'] == 'mse':
 			self.reconstruction_loss = nn.MSELoss()
 		elif config['loss_reconstruction'] == 'perceptual':
