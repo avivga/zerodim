@@ -38,25 +38,20 @@ class FactorModel(nn.Module):
 			for f in range(config['n_factors'])
 		])
 
-		self.img_factor_embeddings = nn.ModuleList([
-			nn.Embedding(
-				num_embeddings=config['n_imgs'],
-				embedding_dim=config['factor_sizes'][f],
-				_weight=torch.rand((config['n_imgs'], config['factor_sizes'][f])) * 0.05
-			)
-
+		self.factor_classifiers = nn.ModuleList([
+			BetaVAEEncoder(n_channels=config['img_shape'][-1], latent_dim=config['factor_sizes'][f])
 			for f in range(config['n_factors'])
 		])
 
-	def forward(self, img_id, factors, label_masks):
+	def forward(self, img, factors, label_masks):
 		factor_codes = []
 
 		assignments = []
 		for f in range(self.config['n_factors']):
-			assignment = Categorical(logits=self.img_factor_embeddings[f](img_id))
+			assignment = Categorical(logits=self.factor_classifiers[f](img))
 
 			with torch.no_grad():
-				factor_values = torch.arange(self.config['factor_sizes'][f], dtype=torch.int64).to(img_id.device)
+				factor_values = torch.arange(self.config['factor_sizes'][f], dtype=torch.int64).to(img.device)
 				factor_embeddings = self.factor_embeddings[f](factor_values)
 
 			factor_code = (
@@ -151,6 +146,7 @@ class Model:
 		else:
 			raise Exception('unsupported reconstruction loss')
 
+		self.classification_loss = nn.CrossEntropyLoss()
 		self.rs = np.random.RandomState(seed=1337)
 
 	@staticmethod
@@ -211,11 +207,14 @@ class Model:
 			{
 				'params': itertools.chain(
 					self.latent_model.factor_model.factor_embeddings.parameters(),
-					self.latent_model.factor_model.img_factor_embeddings.parameters(),
 					self.latent_model.residual_embeddings.parameters()
 				),
 
 				'lr': self.config['train']['learning_rate']['latent']
+			},
+			{
+				'params': self.latent_model.factor_model.factor_classifiers.parameters(),
+				'lr': self.config['train']['learning_rate']['classifier']
 			},
 			{
 				'params': self.latent_model.generator.parameters(),
@@ -258,12 +257,9 @@ class Model:
 
 				batch_labeled = {name: tensor.to(self.device) for name, tensor in batch_labeled.items()}
 
-				losses_supervised = self.iterate_latent_model(batch_labeled)
+				losses_supervised = self.iterate_latent_model_with_labels(batch_labeled)
 				loss_supervised = 0
 				for term, val in losses_supervised.items():
-					if term == 'entropy' and epoch < self.config['train']['n_epochs_before_entropy']:
-						continue
-
 					loss_supervised += self.config['train']['loss_weights'][term] * val
 
 				loss = loss_unsupervised + self.config['train']['loss_weights']['supervised'] * loss_supervised
@@ -433,7 +429,7 @@ class Model:
 			json.dump(scores_residual, fp)
 
 	def iterate_latent_model(self, batch):
-		factor_codes, assignments = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
+		factor_codes, assignments = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
 		residual_code = self.latent_model.residual_embeddings(batch['img_id'])
 
 		if self.config['residual_std'] != 0:
@@ -453,12 +449,43 @@ class Model:
 
 		return {
 			'reconstruction': loss_reconstruction,
-			'entropy': loss_entropy,
-			'residual_decay': loss_residual_decay
+			'residual_decay': loss_residual_decay,
+			'entropy': loss_entropy
+		}
+
+	def iterate_latent_model_with_labels(self, batch):
+		factor_codes, assignments = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
+		residual_code = self.latent_model.residual_embeddings(batch['img_id'])
+
+		if self.config['residual_std'] != 0:
+			noise = torch.zeros_like(residual_code)
+			noise.normal_(mean=0, std=self.config['residual_std'])
+
+			residual_code_regularized = residual_code + noise
+		else:
+			residual_code_regularized = residual_code
+
+		latent_code_regularized = torch.cat((factor_codes, residual_code_regularized), dim=1)
+		img_reconstructed = self.latent_model.generator(latent_code_regularized)
+		loss_reconstruction = self.reconstruction_loss(img_reconstructed, batch['img'])
+
+		loss_classification = 0
+		for f in range(self.config['n_factors']):
+			loss_classification += self.classification_loss(
+				assignments[f].logits[batch['label_masks'][:, f]],
+				batch['factors'][batch['label_masks'][:, f], f]
+			)
+
+		loss_residual_decay = torch.mean(residual_code ** 2, dim=1).mean()
+
+		return {
+			'reconstruction': loss_reconstruction,
+			'residual_decay': loss_residual_decay,
+			'classification': loss_classification
 		}
 
 	def iterate_encoders(self, batch):
-		factor_codes_target, _ = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
+		factor_codes_target, _ = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
 		factor_codes = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
 		loss_factors = torch.mean((factor_codes - factor_codes_target) ** 2, dim=1).mean()
 
@@ -480,7 +507,7 @@ class Model:
 		for batch in data_loader:
 			batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
 
-			batch_codes, _ = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
+			batch_codes, _ = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
 			codes.append(batch_codes.cpu())
 
 		codes = torch.cat(codes, dim=0)
@@ -547,7 +574,7 @@ class Model:
 		else:
 			self.latent_model.eval()
 
-			batch['factor_codes'], _ = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
+			batch['factor_codes'], _ = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
 			batch['residual_code'] = self.latent_model.residual_embeddings(batch['img_id'])
 
 		generator = self.amortized_model.generator if amortized else self.latent_model.generator
@@ -587,7 +614,7 @@ class Model:
 		else:
 			self.latent_model.eval()
 
-			batch['factor_codes'], _ = self.latent_model.factor_model(batch['img_id'], batch['factors'], batch['label_masks'])
+			batch['factor_codes'], _ = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
 			batch['residual_code'] = self.latent_model.residual_embeddings(batch['img_id'])
 
 		generator = self.amortized_model.generator if amortized else self.latent_model.generator

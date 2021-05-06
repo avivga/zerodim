@@ -8,8 +8,8 @@ factor_names:
 train_size: 17568
 n_labels_per_factor: 1000
 
-factor_dim: 8
-residual_dim: 16
+factor_dim: 1
+residual_dim: 8
 
 residual_std: 1
 
@@ -22,13 +22,16 @@ train:
 
   learning_rate:
     latent: 0.01
+    classifier: 0.0001
     generator: 0.001
     min: 0.0001
 
   loss_weights:
     reconstruction: 1
-    entropy: 0.01
     residual_decay: 0.0001
+
+    entropy: 0.001
+    classification: 0.001
     supervised: 10
 
 amortize:

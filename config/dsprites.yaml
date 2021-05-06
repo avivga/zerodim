@@ -29,8 +29,10 @@ train:
 
   loss_weights:
     reconstruction: 1
-    entropy: 0.01
     residual_decay: 0.0001
+
+    entropy: 0.001
+    classification: 0.001
     supervised: 10
 
 amortize:
