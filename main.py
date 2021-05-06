@@ -39,13 +39,13 @@ def train_synthetic(args):
 	rs = np.random.RandomState(seed=0)
 	train_idx = rs.choice(imgs.shape[0], size=config['train_size'], replace=False)
 
-	# TODO: separate partial N and incomplete D
-
+	# labels are partial but complete = same seed for each factor
 	rs = np.random.RandomState(seed=0)
+	label_idx = rs.choice(config['train_size'], size=config['n_labels_per_factor'], replace=False)
+
 	label_masks = np.zeros_like(factors[train_idx]).astype(np.bool)
 	for f in range(factors.shape[1]):
-		idx = rs.choice(config['train_size'], size=config['n_labels_per_factor'], replace=False)
-		label_masks[idx, f] = True
+		label_masks[label_idx, f] = True
 
 	config.update({
 		'img_shape': imgs[train_idx].shape[1:],
