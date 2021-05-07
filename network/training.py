@@ -292,6 +292,10 @@ class Model:
 				summary.add_scalar(tag='dci/disentanglement', scalar_value=scores['disentanglement'], global_step=epoch)
 				summary.add_scalar(tag='dci/completeness', scalar_value=scores['completeness'], global_step=epoch)
 
+				for factor_idx, factor_name in enumerate(self.config['factor_names']):
+					acc = self.eval_factor_classification(imgs, factors, factor_idx)
+					summary.add_scalar(tag='factors/{}'.format(factor_name), scalar_value=acc, global_step=epoch)
+
 				latent_residuals = self.embed_residuals(dataset)
 				for factor_idx, factor_name in enumerate(self.config['factor_names']):
 					acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, factor_idx])
@@ -415,18 +419,25 @@ class Model:
 		with open(os.path.join(eval_dir, 'dci.json'), 'w') as fp:
 			json.dump(scores, fp)
 
+		scores = {}
+		for f, factor_name in enumerate(self.config['factor_names']):
+			scores[factor_name] = self.eval_factor_classification(imgs, factors, f)
+
+		with open(os.path.join(eval_dir, 'factors.json'), 'w') as fp:
+			json.dump(scores, fp)
+
 		latent_residuals = self.encode_residuals(imgs)
-		scores_residual = {}
+		scores = {}
 		for f, factor_name in enumerate(self.config['factor_names']):
 			acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, f])
-			scores_residual[factor_name] = acc_test
+			scores[factor_name] = acc_test
 
 		for f, factor_name in enumerate(self.config['residual_factor_names']):
 			acc_train, acc_test = classifier.logistic_regression(latent_residuals, residual_factors[:, f])
-			scores_residual[factor_name] = acc_test
+			scores[factor_name] = acc_test
 
 		with open(os.path.join(eval_dir, 'residual.json'), 'w') as fp:
-			json.dump(scores_residual, fp)
+			json.dump(scores, fp)
 
 	def iterate_latent_model(self, batch):
 		factor_codes, assignments = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
@@ -557,6 +568,23 @@ class Model:
 
 		codes = torch.cat(codes, dim=0)
 		return codes.numpy()
+
+	@torch.no_grad()
+	def eval_factor_classification(self, imgs, factors, factor_idx):
+		self.latent_model.eval()
+
+		dataset = TensorDataset(torch.from_numpy(imgs).permute(0, 3, 1, 2))
+		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
+
+		predictions = []
+		for batch in data_loader:
+			batch_predictions = self.latent_model.factor_model.factor_classifiers[factor_idx](batch[0].to(self.device)).argmax(dim=1)
+			predictions.append(batch_predictions.cpu().numpy())
+
+		predictions = np.concatenate(predictions, axis=0)
+		accuracy = np.mean(factors[:, factor_idx] == predictions)
+
+		return accuracy
 
 	@torch.no_grad()
 	def visualize_translation(self, dataset, factor_idx, n_samples=10, randomized=False, amortized=False):
