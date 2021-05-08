@@ -6,7 +6,7 @@ factor_names:
   - x
   - y
 
-train_size: 20000
+train_size: 50000
 n_labels_per_factor: 1000
 
 factor_dim: 1
@@ -17,7 +17,7 @@ residual_std: 1
 train:
   batch_size: 128
   n_epochs: 200
-  n_epochs_between_evals: 50
+  n_epochs_between_evals: 200
   n_epochs_between_visualizations: 10
   n_epochs_before_entropy: 20
 
