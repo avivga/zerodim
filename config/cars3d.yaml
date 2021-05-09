@@ -1,4 +1,5 @@
 generator_arch: betavae
+encoder_arch: betavae
 loss_reconstruction: mse
 
 factor_names:
@@ -43,3 +44,5 @@ amortize:
   learning_rate:
     max: 0.001
     min: 0.00001
+
+gt_labels: True

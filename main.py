@@ -18,7 +18,7 @@ def preprocess(args, extras=[]):
 	np.savez(file=assets.get_preprocess_file_path(args.data_name), **img_dataset.read())
 
 
-def train_synthetic(args):
+def train(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.data_name, args.model_name)
@@ -30,28 +30,32 @@ def train_synthetic(args):
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
 	imgs = data['imgs'].astype(np.float32) / 255.0
 
-	labeled_factors_ids = [data['factor_names'].tolist().index(factor_name) for factor_name in config['factor_names']]
-	residual_factor_ids = [f for f in range(len(data['factor_sizes'])) if f not in labeled_factors_ids]
+	labeled_factor_ids = [data['factor_names'].tolist().index(factor_name) for factor_name in config['factor_names']]
+	residual_factor_ids = [f for f in range(len(data['factor_sizes'])) if f not in labeled_factor_ids]
 
-	factors = data['factors'][:, labeled_factors_ids]
+	factors = data['factors'][:, labeled_factor_ids]
 	residual_factors = data['factors'][:, residual_factor_ids]
 
-	rs = np.random.RandomState(seed=0)
-	train_idx = rs.choice(imgs.shape[0], size=config['train_size'], replace=False)
+	if config['gt_labels']:
+		rs = np.random.RandomState(seed=0)
+		train_idx = rs.choice(imgs.shape[0], size=config['train_size'], replace=False)
 
-	# labels are partial but complete = same seed for each factor
-	rs = np.random.RandomState(seed=0)
-	label_idx = rs.choice(config['train_size'], size=config['n_labels_per_factor'], replace=False)
+		# labels are partial but complete = same seed for each factor
+		rs = np.random.RandomState(seed=0)
+		label_idx = rs.choice(config['train_size'], size=config['n_labels_per_factor'], replace=False)
 
-	label_masks = np.zeros_like(factors[train_idx]).astype(np.bool)
-	for f in range(factors.shape[1]):
-		label_masks[label_idx, f] = True
+		label_masks = np.zeros_like(factors[train_idx]).astype(np.bool)
+		for f in range(factors.shape[1]):
+			label_masks[label_idx, f] = True
+	else:
+		train_idx = np.arange(imgs.shape[0])
+		# TODO: label_masks
 
 	config.update({
 		'img_shape': imgs[train_idx].shape[1:],
 		'n_imgs': imgs[train_idx].shape[0],
-		'n_factors': len(labeled_factors_ids),
-		'factor_sizes': data['factor_sizes'][labeled_factors_ids],
+		'n_factors': len(labeled_factor_ids),
+		'factor_sizes': data['factor_sizes'][labeled_factor_ids],
 		'residual_factor_sizes': data['factor_sizes'][residual_factor_ids],
 		'residual_factor_names': data['factor_names'][residual_factor_ids]
 	})
@@ -59,42 +63,17 @@ def train_synthetic(args):
 	model = Model(config)
 	model.train_latent_model(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, tensorboard_dir)
 
-	amortized_tensorboard_dir = os.path.join(tensorboard_dir, 'amortized')
-	os.mkdir(amortized_tensorboard_dir)
-	model.train_encoders(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, amortized_tensorboard_dir)
+	tensorboard_dir_amortization = os.path.join(tensorboard_dir, 'amortization')
+	os.mkdir(tensorboard_dir_amortization)
+	model.train_encoders(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, tensorboard_dir_amortization)
 
-	model.evaluate(imgs, factors, residual_factors, eval_dir)
+	if 'synthesis' in config:
+		tensorboard_dir_synthesis = os.path.join(tensorboard_dir, 'synthesis')
+		os.mkdir(tensorboard_dir_synthesis)
+		model.tune_amortized_model(imgs[train_idx], factors[train_idx], label_masks, model_dir, tensorboard_dir_synthesis)
 
-
-# def train(args):
-# 	assets = AssetManager(args.base_dir)
-# 	model_dir = assets.recreate_model_dir(args.model_name)
-# 	tensorboard_dir = assets.recreate_tensorboard_dir(args.data_name, args.model_name)
-#
-# 	data = np.load(assets.get_preprocess_file_path(args.data_name))
-# 	imgs = data['imgs'].astype(np.float32) / 255.0
-#
-# 	factors = np.load(os.path.join(args.base_dir, 'cache', 'preprocess', 'celeba-clip-l5000.npy')).astype(np.int64).T
-# 	label_masks = np.ones_like(factors).astype(np.bool)
-# 	label_masks[factors == -1] = False
-# 	factors[factors == -1] = 0  # dummy valid value
-#
-# 	factor_sizes = [np.unique(factors[:, i]).size for i in range(factors.shape[1])]
-#
-# 	config = dict(
-# 		img_shape=imgs.shape[1:],
-# 		n_imgs=imgs.shape[0],
-# 		n_factors=len(factor_sizes),
-# 		factor_sizes=factor_sizes,
-# 		factor_names=["age", "gender", "ethnicity", "hair", "face", "attractive", "thin", "hairstyle", "beard", "glasses"],
-# 		generator_arch='stylegan2',
-# 		loss_reconstruction='perceptual'
-# 	)
-#
-# 	config.update(base_config)
-#
-# 	model = Model(config)
-# 	model.train(imgs, factors, label_masks, model_dir, tensorboard_dir)
+	if config['gt_labels']:
+		model.evaluate(imgs, factors, residual_factors, eval_dir)
 
 
 def main():
@@ -110,16 +89,11 @@ def main():
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
 
-	train_synthetic_parser = action_parsers.add_parser('train-synthetic')
-	train_synthetic_parser.add_argument('-dn', '--data-name', type=str, required=True)
-	train_synthetic_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	train_synthetic_parser.add_argument('-cf', '--config', type=str, required=True)
-	train_synthetic_parser.set_defaults(func=train_synthetic)
-
-	# train_parser = action_parsers.add_parser('train')
-	# train_parser.add_argument('-dn', '--data-name', type=str, required=True)
-	# train_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	# train_parser.set_defaults(func=train)
+	train_parser = action_parsers.add_parser('train')
+	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	train_parser.add_argument('-cf', '--config', type=str, required=True)
+	train_parser.set_defaults(func=train)
 
 	args, extras = parser.parse_known_args()
 	if len(extras) == 0:

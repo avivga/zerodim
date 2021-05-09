@@ -1,0 +1,78 @@
+generator_arch: stylegan2
+encoder_arch: vgglike
+loss_reconstruction: perceptual
+
+factor_names:
+  - hair_color
+  - gender
+  - age
+  - eyeglasses
+  - smiling
+  - mustache
+  - goatee
+  - beard
+  - bangs
+  - lipstick
+  - skin
+
+train_size: 20000
+n_labels_per_factor: 20000
+
+factor_dim: 8
+residual_dim: 128
+
+residual_std: 1
+
+perceptual_loss:
+  - 2
+  - 7
+  - 12
+  - 21
+  - 30
+
+train:
+  batch_size: 8
+  n_epochs: 200
+  n_epochs_between_evals: 50
+  n_epochs_between_visualizations: 10
+  n_epochs_before_entropy: 20
+
+  learning_rate:
+    latent: 0.01
+    classifier: 0.0001
+    generator: 0.001
+    min: 0.0001
+
+  loss_weights:
+    reconstruction: 1
+    residual_decay: 0.0001
+
+    entropy: 0.001
+    classification: 0.001
+    supervised: 10
+
+amortization:
+  batch_size: 8
+  n_epochs: 200
+  n_epochs_between_evals: 50
+  n_epochs_between_visualizations: 10
+
+  learning_rate:
+    max: 0.001
+    min: 0.00001
+
+synthesis:
+  batch_size: 4
+  n_epochs: 100
+  n_epochs_between_visualizations: 10
+
+  learning_rate:
+    generator: 0.0001
+    discriminator: 0.0001
+
+  loss_weights:
+    reconstruction: 1
+    latent: 10
+    adversarial: 1
+
+gt_labels: True
