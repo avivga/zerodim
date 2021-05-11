@@ -61,16 +61,21 @@ def train(args):
 	})
 
 	model = Model(config)
-	model.train_latent_model(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, tensorboard_dir)
+	model.train_latent_model(
+		imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx],
+		model_dir, tensorboard_dir
+	)
 
-	tensorboard_dir_amortization = os.path.join(tensorboard_dir, 'amortization')
-	os.mkdir(tensorboard_dir_amortization)
-	model.train_encoders(imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx], model_dir, tensorboard_dir_amortization)
+	model.train_encoders(
+		imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx],
+		model_dir, tensorboard_dir=os.path.join(tensorboard_dir, 'amortization')
+	)
 
 	if 'synthesis' in config:
-		tensorboard_dir_synthesis = os.path.join(tensorboard_dir, 'synthesis')
-		os.mkdir(tensorboard_dir_synthesis)
-		model.tune_amortized_model(imgs[train_idx], factors[train_idx], label_masks, model_dir, tensorboard_dir_synthesis)
+		model.tune_amortized_model(
+			imgs[train_idx], factors[train_idx], label_masks,
+			model_dir, tensorboard_dir=os.path.join(tensorboard_dir, 'synthesis')
+		)
 
 	if config['gt_labels']:
 		model.evaluate(imgs, factors, residual_factors, eval_dir)

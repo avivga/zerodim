@@ -368,7 +368,9 @@ class Model:
 		self.latent_model.to(self.device)
 		self.amortized_model.to(self.device)
 
+		os.mkdir(tensorboard_dir)
 		summary = SummaryWriter(log_dir=tensorboard_dir)
+
 		for epoch in range(self.config['amortization']['n_epochs'] + 1):
 			self.latent_model.train()
 			self.amortized_model.train()
@@ -464,7 +466,9 @@ class Model:
 		self.amortized_model.to(self.device)
 		self.reconstruction_loss.to(self.device)
 
+		os.mkdir(tensorboard_dir)
 		summary = SummaryWriter(log_dir=tensorboard_dir)
+
 		for epoch in range(self.config['synthesis']['n_epochs'] + 1):
 			self.latent_model.train()
 			self.amortized_model.train()
