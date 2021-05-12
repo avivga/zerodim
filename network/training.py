@@ -56,7 +56,7 @@ class FactorModel(nn.Module):
 			for f in range(config['n_factors'])
 		])
 
-		if config['encoder_arch'] == 'betavae':
+		if config['arch_betavae']:
 			self.factor_classifiers = nn.ModuleList([
 				BetaVAEEncoder(n_channels=config['img_shape'][-1], latent_dim=config['factor_sizes'][f])
 				for f in range(config['n_factors'])
@@ -111,7 +111,7 @@ class LatentModel(nn.Module):
 			_weight=torch.rand((config['n_imgs'], config['residual_dim'])) * 0.05
 		)
 
-		if config['generator_arch'] == 'betavae':
+		if config['arch_betavae']:
 			self.generator = BetaVAEGenerator(
 				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
 				n_channels=config['img_shape'][-1]
@@ -133,18 +133,15 @@ class AmortizedModel(nn.Module):
 
 		self.factor_model = FactorModel(config)
 
-		if config['encoder_arch'] == 'betavae':
+		if config['arch_betavae']:
 			self.residual_encoder = BetaVAEEncoder(n_channels=config['img_shape'][-1], latent_dim=config['residual_dim'])
-		else:
-			self.residual_encoder = ResidualEncoder(img_size=config['img_shape'][0], latent_dim=config['residual_dim'])
-
-		if config['generator_arch'] == 'betavae':
 			self.generator = BetaVAEGenerator(
 				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
 				n_channels=config['img_shape'][-1]
 			)
 
 		else:
+			self.residual_encoder = ResidualEncoder(img_size=config['img_shape'][0], latent_dim=config['residual_dim'])
 			self.generator = StyleGenerator(
 				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
 				img_size=config['img_shape'][0]

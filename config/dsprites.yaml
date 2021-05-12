@@ -1,5 +1,4 @@
-generator_arch: betavae
-encoder_arch: betavae
+arch_betavae: True
 loss_reconstruction: bce
 
 factor_names:
@@ -36,7 +35,7 @@ train:
     classification: 0.001
     supervised: 10
 
-amortize:
+amortization:
   batch_size: 128
   n_epochs: 200
   n_epochs_between_evals: 50
@@ -45,5 +44,20 @@ amortize:
   learning_rate:
     max: 0.001
     min: 0.00001
+
+synthesis:
+  batch_size: 128
+  n_epochs: 200
+  n_epochs_between_evals: 50
+  n_epochs_between_visualizations: 10
+
+  adversarial: False
+
+  learning_rate:
+    generator: 0.0001
+
+  loss_weights:
+    reconstruction: 1
+    latent: 10
 
 gt_labels: True

@@ -1,5 +1,4 @@
-generator_arch: betavae
-encoder_arch: betavae
+arch_betavae: True
 loss_reconstruction: mse
 
 factor_names:
@@ -37,7 +36,7 @@ train:
 
 amortization:
   batch_size: 128
-  n_epochs: 50
+  n_epochs: 200
   n_epochs_between_evals: 50
   n_epochs_between_visualizations: 10
 
@@ -47,7 +46,7 @@ amortization:
 
 synthesis:
   batch_size: 128
-  n_epochs: 100
+  n_epochs: 200
   n_epochs_between_evals: 50
   n_epochs_between_visualizations: 10
 

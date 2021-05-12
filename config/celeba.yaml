@@ -1,5 +1,4 @@
-generator_arch: stylegan2
-encoder_arch: vgglike
+arch_betavae: False
 loss_reconstruction: perceptual
 
 factor_names:
