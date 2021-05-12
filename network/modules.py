@@ -156,9 +156,9 @@ class BetaVAEEncoder(nn.Module):
 		return self.fc(h)
 
 
-class FactorEncoder(nn.Module):
+class ConvEncoder(nn.Module):
 
-	def __init__(self, img_shape, latent_dim, dim_in=32, max_conv_dim=128):
+	def __init__(self, img_shape, dim_in=32, max_conv_dim=128):
 		super().__init__()
 
 		blocks = []
@@ -179,25 +179,13 @@ class FactorEncoder(nn.Module):
 		blocks += [nn.Conv2d(in_channels=dim_out, out_channels=dim_out, kernel_size=4, stride=1, padding=0)]
 		self.conv = nn.Sequential(*blocks)
 
-		self.fc = nn.Sequential(
-			nn.Linear(in_features=dim_out, out_features=dim_out // 2),
-			nn.LeakyReLU(0.2),
-
-			nn.Linear(in_features=dim_out // 2, out_features=latent_dim)
-		)
-
 	def forward(self, img):
-		batch_size = img.shape[0]
-
-		x = self.conv(img)
-		x = x.view((batch_size, -1))
-
-		return self.fc(x)
+		return self.conv(img)
 
 
 class ResidualEncoder(nn.Module):
 
-	def __init__(self, img_size, code_dim, dim_in=64, max_conv_dim=256):
+	def __init__(self, img_size, latent_dim, dim_in=64, max_conv_dim=256):
 		super().__init__()
 
 		blocks = []
@@ -212,7 +200,7 @@ class ResidualEncoder(nn.Module):
 		blocks += [nn.LeakyReLU(0.2)]
 		blocks += [nn.Conv2d(dim_out, dim_out, 4, 1, 0)]
 		blocks += [nn.LeakyReLU(0.2)]
-		blocks += [nn.Conv2d(dim_out, code_dim, 1, 1, 0)]
+		blocks += [nn.Conv2d(dim_out, latent_dim, 1, 1, 0)]
 
 		self.main = nn.Sequential(*blocks)
 

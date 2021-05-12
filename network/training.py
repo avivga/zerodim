@@ -16,11 +16,27 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter
 
 from network.modules import BetaVAEGenerator, BetaVAEEncoder
-from network.modules import StyleGenerator, FactorEncoder, VGGDistance
+from network.modules import StyleGenerator, ConvEncoder, ResidualEncoder, VGGDistance
 from network.utils import NamedTensorDataset
 
 from evaluation import dci, classifier
 from model import Discriminator  # from stylegan2
+
+
+class MultiFactorClassifier(nn.Module):
+
+	def __init__(self, config):
+		super().__init__()
+
+		self.base_encoder = ConvEncoder(img_shape=config['img_shape'], max_conv_dim=128)
+		self.heads = nn.ModuleList([
+			nn.Linear(in_features=128, out_features=config['factor_sizes'][f])
+			for f in range(config['n_factors'])
+		])
+
+	def forward(self, img):
+		x = self.base_encoder(img).squeeze()
+		return [head(x) for head in self.heads]
 
 
 class FactorModel(nn.Module):
@@ -46,29 +62,33 @@ class FactorModel(nn.Module):
 				for f in range(config['n_factors'])
 			])
 
-		elif config['encoder_arch'] == 'vgglike':
-			self.factor_classifiers = nn.ModuleList([
-				FactorEncoder(img_shape=config['img_shape'], latent_dim=config['factor_sizes'][f])
-				for f in range(config['n_factors'])
-			])
 		else:
-			raise Exception('unsupported encoder arch')
+			self.factor_classifiers = MultiFactorClassifier(config)
 
-	def forward(self, img, factors, label_masks):
+	def forward(self, img, factors=None, label_masks=None):
 		factor_codes = []
-
 		assignments = []
+
+		if isinstance(self.factor_classifiers, MultiFactorClassifier):
+			logits = self.factor_classifiers(img)
+		else:
+			logits = [factor_classifier(img) for factor_classifier in self.factor_classifiers]
+
 		for f in range(self.config['n_factors']):
-			assignment = Categorical(logits=self.factor_classifiers[f](img))
+			assignment = Categorical(logits=logits[f])
 
 			with torch.no_grad():
 				factor_values = torch.arange(self.config['factor_sizes'][f], dtype=torch.int64).to(img.device)
 				factor_embeddings = self.factor_embeddings[f](factor_values)
 
-			factor_code = (
-				self.factor_embeddings[f](factors[:, f]) * label_masks[:, [f]]
-				+ torch.matmul(assignment.probs, factor_embeddings) * (~label_masks[:, [f]])
-			)
+			if factors is not None:
+				factor_code = (
+					self.factor_embeddings[f](factors[:, f]) * label_masks[:, [f]]
+					+ torch.matmul(assignment.probs, factor_embeddings) * (~label_masks[:, [f]])
+				)
+
+			else:
+				factor_code = torch.matmul(assignment.probs, factor_embeddings)
 
 			assignments.append(assignment)
 			factor_codes.append(factor_code)
@@ -97,13 +117,11 @@ class LatentModel(nn.Module):
 				n_channels=config['img_shape'][-1]
 			)
 
-		elif config['generator_arch'] == 'stylegan2':
+		else:
 			self.generator = StyleGenerator(
 				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
 				img_size=config['img_shape'][0]
 			)
-		else:
-			raise Exception('unsupported generator arch')
 
 
 class AmortizedModel(nn.Module):
@@ -113,12 +131,12 @@ class AmortizedModel(nn.Module):
 
 		self.config = config
 
-		self.factor_encoders = nn.ModuleList([
-			BetaVAEEncoder(n_channels=config['img_shape'][-1], latent_dim=config['factor_dim'])
-			for _ in range(config['n_factors'])
-		])
+		self.factor_model = FactorModel(config)
 
-		self.residual_encoder = BetaVAEEncoder(n_channels=config['img_shape'][-1], latent_dim=config['residual_dim'])
+		if config['encoder_arch'] == 'betavae':
+			self.residual_encoder = BetaVAEEncoder(n_channels=config['img_shape'][-1], latent_dim=config['residual_dim'])
+		else:
+			self.residual_encoder = ResidualEncoder(img_size=config['img_shape'][0], latent_dim=config['residual_dim'])
 
 		if config['generator_arch'] == 'betavae':
 			self.generator = BetaVAEGenerator(
@@ -126,15 +144,13 @@ class AmortizedModel(nn.Module):
 				n_channels=config['img_shape'][-1]
 			)
 
-		elif config['generator_arch'] == 'stylegan2':
+		else:
 			self.generator = StyleGenerator(
 				latent_dim=config['n_factors'] * config['factor_dim'] + config['residual_dim'],
 				img_size=config['img_shape'][0]
 			)
 
 			self.discriminator = Discriminator(size=config['img_shape'][0])
-		else:
-			raise Exception('unsupported generator arch')
 
 
 class Model:
@@ -333,8 +349,9 @@ class Model:
 
 		summary.close()
 
-	def train_encoders(self, imgs, factors, label_masks, residual_factors, model_dir, tensorboard_dir):
+	def warmup_amortized_model(self, imgs, factors, label_masks, residual_factors, model_dir, tensorboard_dir):
 		self.amortized_model = AmortizedModel(self.config)
+		self.amortized_model.factor_model.load_state_dict(self.latent_model.factor_model.state_dict())
 		self.amortized_model.generator.load_state_dict(self.latent_model.generator.state_dict())
 
 		data = dict(
@@ -352,10 +369,7 @@ class Model:
 		)
 
 		optimizer = Adam(
-			params=itertools.chain(
-				self.amortized_model.factor_encoders.parameters(),
-				self.amortized_model.residual_encoder.parameters()
-			),
+			params=self.amortized_model.residual_encoder.parameters(),
 			lr=self.config['amortization']['learning_rate']['max']
 		)
 
@@ -431,11 +445,12 @@ class Model:
 
 		summary.close()
 
-	def tune_amortized_model(self, imgs, factors, label_masks, model_dir, tensorboard_dir):
+	def tune_amortized_model(self, imgs, factors, label_masks, residual_factors, model_dir, tensorboard_dir):
 		data = dict(
 			img=torch.from_numpy(imgs).permute(0, 3, 1, 2),
 			img_id=torch.from_numpy(np.arange(imgs.shape[0])),
 			factors=torch.from_numpy(factors.astype(np.int64)),
+			residual_factors=torch.from_numpy(residual_factors.astype(np.int64)),
 			label_masks=torch.from_numpy(label_masks.astype(np.bool))
 		)
 
@@ -447,7 +462,6 @@ class Model:
 
 		generator_optimizer = Adam(
 			params=itertools.chain(
-				self.amortized_model.factor_encoders.parameters(),
 				self.amortized_model.residual_encoder.parameters(),
 				self.amortized_model.generator.parameters()
 			),
@@ -456,11 +470,12 @@ class Model:
 			betas=(0.5, 0.999)
 		)
 
-		discriminator_optimizer = Adam(
-			params=self.amortized_model.discriminator.parameters(),
-			lr=self.config['synthesis']['learning_rate']['discriminator'],
-			betas=(0.5, 0.999)
-		)
+		if self.config['synthesis']['adversarial']:
+			discriminator_optimizer = Adam(
+				params=self.amortized_model.discriminator.parameters(),
+				lr=self.config['synthesis']['learning_rate']['discriminator'],
+				betas=(0.5, 0.999)
+			)
 
 		self.latent_model.to(self.device)
 		self.amortized_model.to(self.device)
@@ -477,17 +492,18 @@ class Model:
 			for batch in pbar:
 				batch = {name: tensor.to(self.device) for name, tensor in batch.items()}
 
-				losses_discriminator = self.iterate_discriminator(batch)
-				loss_discriminator = (
-					losses_discriminator['fake']
-					+ losses_discriminator['real']
-					+ losses_discriminator['gradient_penalty']
-				)
+				if self.config['synthesis']['adversarial']:
+					losses_discriminator = self.iterate_discriminator(batch)
+					loss_discriminator = (
+						losses_discriminator['fake']
+						+ losses_discriminator['real']
+						+ losses_discriminator['gradient_penalty']
+					)
 
-				generator_optimizer.zero_grad()
-				discriminator_optimizer.zero_grad()
-				loss_discriminator.backward()
-				discriminator_optimizer.step()
+					generator_optimizer.zero_grad()
+					discriminator_optimizer.zero_grad()
+					loss_discriminator.backward()
+					discriminator_optimizer.step()
 
 				losses_generator = self.iterate_amortized_model(batch)
 				loss_generator = 0
@@ -495,20 +511,33 @@ class Model:
 					loss_generator += self.config['synthesis']['loss_weights'][term] * loss
 
 				generator_optimizer.zero_grad()
-				discriminator_optimizer.zero_grad()
+				if self.config['synthesis']['adversarial']:
+					discriminator_optimizer.zero_grad()
+
 				loss_generator.backward()
 				generator_optimizer.step()
 
 				pbar.set_description_str('epoch #{}'.format(epoch))
-				pbar.set_postfix(gen_loss=loss_generator.item(), disc_loss=loss_discriminator.item())
+				pbar.set_postfix(gen_loss=loss_generator.item())
 
 			pbar.close()
 
-			summary.add_scalar(tag='loss/discriminator', scalar_value=loss_discriminator.item(), global_step=epoch)
 			summary.add_scalar(tag='loss/generator', scalar_value=loss_generator.item(), global_step=epoch)
+			if self.config['synthesis']['adversarial']:
+				summary.add_scalar(tag='loss/discriminator', scalar_value=loss_discriminator.item(), global_step=epoch)
 
 			for term, loss in losses_generator.items():
 				summary.add_scalar(tag='loss/generator/{}'.format(term), scalar_value=loss.item(), global_step=epoch)
+
+			if epoch % self.config['synthesis']['n_epochs_between_evals'] == 0 and self.config['gt_labels']:
+				latent_residuals = self.encode_residuals(imgs)
+				for factor_idx, factor_name in enumerate(self.config['factor_names']):
+					acc_train, acc_test = classifier.logistic_regression(latent_residuals, factors[:, factor_idx])
+					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
+
+				for factor_idx, factor_name in enumerate(self.config['residual_factor_names']):
+					acc_train, acc_test = classifier.logistic_regression(latent_residuals, residual_factors[:, factor_idx])
+					summary.add_scalar(tag='residual/to-{}'.format(factor_name), scalar_value=acc_test, global_step=epoch)
 
 			if epoch % self.config['synthesis']['n_epochs_between_visualizations'] == 0:
 				figure = self.visualize_reconstruction(dataset, amortized=True)
@@ -608,22 +637,17 @@ class Model:
 		}
 
 	def iterate_encoders(self, batch):
-		factor_codes_target, _ = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])
-		factor_codes = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
-		loss_factors = torch.mean((factor_codes - factor_codes_target) ** 2, dim=1).mean()
-
 		residual_code_target = self.latent_model.residual_embeddings(batch['img_id'])
 		residual_code = self.amortized_model.residual_encoder(batch['img'])
 		loss_residual = torch.mean((residual_code - residual_code_target) ** 2, dim=1).mean()
 
 		return {
-			'factors': loss_factors,
 			'residual': loss_residual
 		}
 
 	def iterate_amortized_model(self, batch):
 		with torch.no_grad():
-			factor_codes = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+			factor_codes, _ = self.amortized_model.factor_model(batch['img'])
 			residual_code_target = self.latent_model.residual_embeddings(batch['img_id'])
 
 		residual_code = self.amortized_model.residual_encoder(batch['img'])
@@ -634,18 +658,22 @@ class Model:
 
 		loss_residual = torch.mean((residual_code - residual_code_target) ** 2, dim=1).mean()
 
-		discriminator_fake = self.amortized_model.discriminator(img_reconstructed)
-		loss_adversarial = self.adv_loss(discriminator_fake, 1)
-
-		return {
+		losses = {
 			'reconstruction': loss_reconstruction,
-			'latent': loss_residual,
-			'adversarial': loss_adversarial
+			'latent': loss_residual
 		}
+
+		if self.config['synthesis']['adversarial']:
+			discriminator_fake = self.amortized_model.discriminator(img_reconstructed)
+			loss_adversarial = self.adv_loss(discriminator_fake, 1)
+
+			losses['adversarial'] = loss_adversarial
+
+		return losses
 
 	def iterate_discriminator(self, batch):
 		with torch.no_grad():
-			factor_codes = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+			factor_codes, _ = self.amortized_model.factor_model(batch['img'])
 			residual_code = self.amortized_model.residual_encoder(batch['img'])
 			latent_code = torch.cat((factor_codes, residual_code), dim=1)
 			img_reconstructed = self.amortized_model.generator(latent_code)
@@ -704,9 +732,7 @@ class Model:
 		dataset = TensorDataset(torch.from_numpy(imgs).permute(0, 3, 1, 2))
 		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
 		for batch in data_loader:
-			factor_codes = [self.amortized_model.factor_encoders[f](batch[0].to(self.device)) for f in range(self.config['n_factors'])]
-			batch_codes = torch.cat(factor_codes, dim=1)
-
+			batch_codes, _ = self.amortized_model.factor_model(batch[0].to(self.device))
 			codes.append(batch_codes.cpu())
 
 		codes = torch.cat(codes, dim=0)
@@ -750,7 +776,14 @@ class Model:
 
 		predictions = []
 		for batch in data_loader:
-			batch_predictions = self.latent_model.factor_model.factor_classifiers[factor_idx](batch[0].to(self.device)).argmax(dim=1)
+			batch_imgs = batch[0].to(self.device)
+
+			if isinstance(self.latent_model.factor_model.factor_classifiers, MultiFactorClassifier):
+				logits = self.latent_model.factor_model.factor_classifiers(batch_imgs)[factor_idx]
+			else:
+				logits = self.latent_model.factor_model.factor_classifiers[factor_idx](batch_imgs)
+
+			batch_predictions = logits.argmax(dim=1)
 			predictions.append(batch_predictions.cpu().numpy())
 
 		predictions = np.concatenate(predictions, axis=0)
@@ -768,7 +801,7 @@ class Model:
 		if amortized:
 			self.amortized_model.eval()
 
-			batch['factor_codes'] = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+			batch['factor_codes'], _ = self.amortized_model.factor_model(batch['img'])
 			batch['residual_code'] = self.amortized_model.residual_encoder(batch['img'])
 
 		else:
@@ -808,7 +841,7 @@ class Model:
 		if amortized:
 			self.amortized_model.eval()
 
-			batch['factor_codes'] = torch.cat([self.amortized_model.factor_encoders[f](batch['img']) for f in range(self.config['n_factors'])], dim=1)
+			batch['factor_codes'], _ = self.amortized_model.factor_model(batch['img'])
 			batch['residual_code'] = self.amortized_model.residual_encoder(batch['img'])
 
 		else:

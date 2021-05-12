@@ -66,16 +66,15 @@ def train(args):
 		model_dir, tensorboard_dir
 	)
 
-	model.train_encoders(
+	model.warmup_amortized_model(
 		imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx],
 		model_dir, tensorboard_dir=os.path.join(tensorboard_dir, 'amortization')
 	)
 
-	if 'synthesis' in config:
-		model.tune_amortized_model(
-			imgs[train_idx], factors[train_idx], label_masks,
-			model_dir, tensorboard_dir=os.path.join(tensorboard_dir, 'synthesis')
-		)
+	model.tune_amortized_model(
+		imgs[train_idx], factors[train_idx], label_masks, residual_factors[train_idx],
+		model_dir, tensorboard_dir=os.path.join(tensorboard_dir, 'synthesis')
+	)
 
 	if config['gt_labels']:
 		model.evaluate(imgs, factors, residual_factors, eval_dir)
