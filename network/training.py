@@ -620,10 +620,11 @@ class Model:
 
 		loss_classification = 0
 		for f in range(self.config['n_factors']):
-			loss_classification += self.classification_loss(
-				assignments[f].logits[batch['label_masks'][:, f]],
-				batch['factors'][batch['label_masks'][:, f], f]
-			)
+			if batch['label_masks'][:, f].any():
+				loss_classification += self.classification_loss(
+					assignments[f].logits[batch['label_masks'][:, f]],
+					batch['factors'][batch['label_masks'][:, f], f]
+				)
 
 		loss_residual_decay = torch.mean(residual_code ** 2, dim=1).mean()
 
