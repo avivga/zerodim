@@ -2,20 +2,16 @@ arch_betavae: False
 loss_reconstruction: perceptual
 
 factor_names:
-  - hair_color
-  - gender
   - age
-  - eyeglasses
-  - smiling
-#  - mustache
-#  - goatee
+  - gender
+  - ethnicity
+  - hair_color
+  - expression
+  - attractiveness
+  - thin
+  - hairstyle
   - beard
-  - bangs
-  - lipstick
-  - skin
-
-train_size: 30000
-n_labels_per_factor: 5000
+  - glasses
 
 factor_dim: 8
 residual_dim: 256
@@ -33,7 +29,7 @@ train:
   batch_size: 8
   n_epochs: 100
   n_epochs_between_evals: 50
-  n_epochs_between_visualizations: 5
+  n_epochs_between_visualizations: 10
   n_epochs_before_entropy: 20
 
   learning_rate:
@@ -54,7 +50,7 @@ amortization:
   batch_size: 64
   n_epochs: 100
   n_epochs_between_evals: 50
-  n_epochs_between_visualizations: 5
+  n_epochs_between_visualizations: 10
 
   learning_rate:
     max: 0.001
@@ -64,7 +60,7 @@ synthesis:
   batch_size: 8
   n_epochs: 100
   n_epochs_between_evals: 50
-  n_epochs_between_visualizations: 5
+  n_epochs_between_visualizations: 10
 
   adversarial: True
 
@@ -77,4 +73,4 @@ synthesis:
     latent: 10
     adversarial: 1
 
-gt_labels: True
+gt_labels: False

@@ -49,7 +49,11 @@ def train(args):
 			label_masks[label_idx, f] = True
 	else:
 		train_idx = np.arange(imgs.shape[0])
-		# TODO: label_masks
+		label_masks = np.zeros_like(factors[train_idx]).astype(np.bool)
+		for f in range(factors.shape[1]):
+			label_idx = (factors[:, f] != -1)
+			label_masks[label_idx, f] = True
+			factors[~label_idx, f] = 0  # dummy unused valid value
 
 	config.update({
 		'img_shape': imgs[train_idx].shape[1:],
