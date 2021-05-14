@@ -5,8 +5,8 @@ factor_names:
   - species
   - age
 
-factor_dim: 64
-residual_dim: 256
+factor_dim: 256
+residual_dim: 64
 
 residual_std: 1
 
@@ -18,7 +18,7 @@ perceptual_loss:
   - 30
 
 train:
-  batch_size: 8
+  batch_size: 16
   n_epochs: 100
   n_epochs_between_evals: 50
   n_epochs_between_visualizations: 5
@@ -49,7 +49,7 @@ amortization:
     min: 0.00001
 
 synthesis:
-  batch_size: 8
+  batch_size: 16
   n_epochs: 100
   n_epochs_between_evals: 50
   n_epochs_between_visualizations: 5
