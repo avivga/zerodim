@@ -12,12 +12,12 @@ from torch.nn import functional as F
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.distributions import Categorical
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from network.modules import BetaVAEGenerator, BetaVAEEncoder
 from network.modules import StyleGenerator, ConvEncoder, ResidualEncoder, VGGDistance
-from network.utils import NamedTensorDataset
+from network.utils import ImageTensorDataset
 
 from evaluation import dci, classifier
 from model import Discriminator  # from stylegan2
@@ -216,14 +216,14 @@ class Model:
 			label_masks=torch.from_numpy(label_masks.astype(np.bool))
 		)
 
-		dataset = NamedTensorDataset(data)
+		dataset = ImageTensorDataset(data)
 		data_loader = DataLoader(
 			dataset, batch_size=self.config['train']['batch_size'],
 			shuffle=True, pin_memory=True, drop_last=False
 		)
 
 		label_ids = np.sum(label_masks, axis=1) > 0
-		dataset_labeled = NamedTensorDataset(dataset[label_ids])
+		dataset_labeled = ImageTensorDataset({name: tensor[label_ids] for name, tensor in data.items()})
 		data_loader_labeled = DataLoader(
 			dataset_labeled, batch_size=self.config['train']['batch_size'],
 			shuffle=True, pin_memory=True, drop_last=False
@@ -359,7 +359,7 @@ class Model:
 			label_masks=torch.from_numpy(label_masks.astype(np.bool))
 		)
 
-		dataset = NamedTensorDataset(data)
+		dataset = ImageTensorDataset(data)
 		data_loader = DataLoader(
 			dataset, batch_size=self.config['amortization']['batch_size'],
 			shuffle=True, pin_memory=True, drop_last=False
@@ -451,7 +451,7 @@ class Model:
 			label_masks=torch.from_numpy(label_masks.astype(np.bool))
 		)
 
-		dataset = NamedTensorDataset(data)
+		dataset = ImageTensorDataset(data)
 		data_loader = DataLoader(
 			dataset, batch_size=self.config['synthesis']['batch_size'],
 			shuffle=True, pin_memory=True, drop_last=False
@@ -727,10 +727,10 @@ class Model:
 		self.amortized_model.eval()
 
 		codes = []
-		dataset = TensorDataset(torch.from_numpy(imgs).permute(0, 3, 1, 2))
+		dataset = ImageTensorDataset({'img': torch.from_numpy(imgs).permute(0, 3, 1, 2)})
 		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
 		for batch in data_loader:
-			batch_codes, _ = self.amortized_model.factor_model(batch[0].to(self.device))
+			batch_codes, _ = self.amortized_model.factor_model(batch['img'].to(self.device))
 			codes.append(batch_codes.cpu())
 
 		codes = torch.cat(codes, dim=0)
@@ -756,10 +756,10 @@ class Model:
 		self.amortized_model.eval()
 
 		codes = []
-		dataset = TensorDataset(torch.from_numpy(imgs).permute(0, 3, 1, 2))
+		dataset = ImageTensorDataset({'img': torch.from_numpy(imgs).permute(0, 3, 1, 2)})
 		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
 		for batch in data_loader:
-			batch_codes = self.amortized_model.residual_encoder(batch[0].to(self.device))
+			batch_codes = self.amortized_model.residual_encoder(batch['img'].to(self.device))
 			codes.append(batch_codes.cpu())
 
 		codes = torch.cat(codes, dim=0)
@@ -769,17 +769,15 @@ class Model:
 	def eval_factor_classification(self, imgs, factors, factor_idx):
 		self.latent_model.eval()
 
-		dataset = TensorDataset(torch.from_numpy(imgs).permute(0, 3, 1, 2))
+		dataset = ImageTensorDataset({'img': torch.from_numpy(imgs).permute(0, 3, 1, 2)})
 		data_loader = DataLoader(dataset, batch_size=64, shuffle=False, pin_memory=True, drop_last=False)
 
 		predictions = []
 		for batch in data_loader:
-			batch_imgs = batch[0].to(self.device)
-
 			if isinstance(self.latent_model.factor_model.factor_classifiers, MultiFactorClassifier):
-				logits = self.latent_model.factor_model.factor_classifiers(batch_imgs)[factor_idx]
+				logits = self.latent_model.factor_model.factor_classifiers(batch['img'].to(self.device))[factor_idx]
 			else:
-				logits = self.latent_model.factor_model.factor_classifiers[factor_idx](batch_imgs)
+				logits = self.latent_model.factor_model.factor_classifiers[factor_idx](batch['img'].to(self.device))
 
 			batch_predictions = logits.argmax(dim=1)
 			predictions.append(batch_predictions.cpu().numpy())

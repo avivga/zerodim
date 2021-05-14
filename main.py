@@ -28,7 +28,7 @@ def train(args):
 		config = yaml.safe_load(config_fp)
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
-	imgs = data['imgs'].astype(np.float32) / 255.0
+	imgs = data['imgs']
 
 	labeled_factor_ids = [data['factor_names'].tolist().index(factor_name) for factor_name in config['factor_names']]
 	residual_factor_ids = [f for f in range(len(data['factor_sizes'])) if f not in labeled_factor_ids]
