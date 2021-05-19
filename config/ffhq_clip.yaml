@@ -7,11 +7,19 @@ factor_names:
   - ethnicity
   - hair_color
   - expression
-  - attractiveness
-  - thin
+  - makeup
+#  - skin
   - hairstyle
   - beard
   - glasses
+#  - stereotype
+
+factors_with_extra_value:
+  - ethnicity
+  - hair_color
+#  - skin
+  - hairstyle
+#  - stereotype
 
 factor_dim: 8
 residual_dim: 256
@@ -27,9 +35,9 @@ perceptual_loss:
 
 train:
   batch_size: 16
-  n_epochs: 100
+  n_epochs: 50
   n_epochs_between_evals: 50
-  n_epochs_between_visualizations: 5
+  n_epochs_between_visualizations: 1
   n_epochs_before_entropy: 20
 
   learning_rate:
@@ -40,7 +48,7 @@ train:
 
   loss_weights:
     reconstruction: 1
-    residual_decay: 0.001
+    residual_decay: 0.0001
 
     entropy: 0.001
     classification: 0.001
@@ -48,12 +56,12 @@ train:
 
 amortization:
   batch_size: 64
-  n_epochs: 100
+  n_epochs: 50
   n_epochs_between_evals: 50
   n_epochs_between_visualizations: 5
 
   learning_rate:
-    max: 0.001
+    max: 0.0005
     min: 0.00001
 
 synthesis:
