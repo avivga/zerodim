@@ -3,12 +3,12 @@ loss_reconstruction: perceptual
 
 factor_names:
   - species
-  - age
+#  - age
 
 factor_dim: 256
 residual_dim: 64
 
-residual_std: 1
+residual_std: 0
 
 perceptual_loss:
   - 2
@@ -18,11 +18,11 @@ perceptual_loss:
   - 30
 
 train:
-  batch_size: 16
+  batch_size: 32
   n_epochs: 100
   n_epochs_between_evals: 50
-  n_epochs_between_visualizations: 5
-  n_epochs_before_entropy: 20
+  n_epochs_between_visualizations: 1
+  n_epochs_before_entropy: 10
 
   learning_rate:
     latent: 0.01
@@ -34,13 +34,13 @@ train:
     reconstruction: 1
     residual_decay: 0.001
 
-    entropy: 0.001
-    classification: 0.001
-    supervised: 10
+    entropy: 0.01
+    classification: 0.01
+    supervised: 1
 
 amortization:
   batch_size: 64
-  n_epochs: 100
+  n_epochs: 50
   n_epochs_between_evals: 50
   n_epochs_between_visualizations: 5
 
@@ -49,10 +49,10 @@ amortization:
     min: 0.00001
 
 synthesis:
-  batch_size: 16
+  batch_size: 32
   n_epochs: 100
   n_epochs_between_evals: 50
-  n_epochs_between_visualizations: 5
+  n_epochs_between_visualizations: 1
 
   adversarial: True
 

@@ -24,7 +24,7 @@ factors_with_extra_value:
 factor_dim: 8
 residual_dim: 256
 
-residual_std: 1
+residual_std: 0
 
 perceptual_loss:
   - 2
@@ -68,7 +68,7 @@ synthesis:
   batch_size: 16
   n_epochs: 100
   n_epochs_between_evals: 50
-  n_epochs_between_visualizations: 5
+  n_epochs_between_visualizations: 1
 
   adversarial: True
 
