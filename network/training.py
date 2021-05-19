@@ -35,7 +35,7 @@ class MultiFactorClassifier(nn.Module):
 		])
 
 	def forward(self, img):
-		x = self.base_encoder(img).squeeze()
+		x = self.base_encoder(img).reshape(img.shape[0], -1)
 		return [head(x) for head in self.heads]
 
 
