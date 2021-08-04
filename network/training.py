@@ -50,7 +50,7 @@ class FactorModel(nn.Module):
 			nn.Embedding(
 				num_embeddings=config['factor_sizes'][f],
 				embedding_dim=config['factor_dim'],
-				_weight=torch.rand((config['factor_sizes'][f], config['factor_dim'])) * 0.05
+				_weight=(2 * torch.rand(config['factor_sizes'][f], config['factor_dim']) - 1) * 0.05
 			)
 
 			for f in range(config['n_factors'])
@@ -114,7 +114,7 @@ class LatentModel(nn.Module):
 		self.residual_embeddings = nn.Embedding(
 			num_embeddings=config['n_imgs'],
 			embedding_dim=config['residual_dim'],
-			_weight=torch.rand((config['n_imgs'], config['residual_dim'])) * 0.05
+			_weight=(2 * torch.rand(config['n_imgs'], config['residual_dim']) - 1) * 0.05
 		)
 
 		if config['arch_betavae']:

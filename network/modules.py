@@ -297,7 +297,7 @@ class VGGFeatures(nn.Module):
 		self.register_buffer('std', std)
 
 	def forward(self, x):
-		x = (x - self.mean) / self.std
+		x = (x - self.mean) / self.std  # TODO: optional?
 
 		output = []
 		for i in range(self.layer_ids[-1] + 1):
