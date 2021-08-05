@@ -19,7 +19,7 @@ from network.modules import BetaVAEGenerator, BetaVAEEncoder
 from network.modules import StyleGenerator, ConvEncoder, ResidualEncoder, VGGDistance
 from network.utils import ImageTensorDataset
 
-from evaluation import dci, classifier
+from evaluation import dci, sap, mig, classifier
 from model import Discriminator  # from stylegan2
 
 
@@ -571,8 +571,17 @@ class Model:
 
 	def evaluate(self, imgs, factors, residual_factors, eval_dir):
 		latent_factors = self.encode_factors(imgs)
+
 		scores = dci.evaluate(latent_factors, factors)
 		with open(os.path.join(eval_dir, 'dci.json'), 'w') as fp:
+			json.dump(scores, fp)
+
+		scores = sap.evaluate(latent_factors, factors)
+		with open(os.path.join(eval_dir, 'sap.json'), 'w') as fp:
+			json.dump(scores, fp)
+
+		scores = mig.evaluate(latent_factors, factors)
+		with open(os.path.join(eval_dir, 'mig.json'), 'w') as fp:
 			json.dump(scores, fp)
 
 		scores = {}
