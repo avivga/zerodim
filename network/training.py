@@ -172,7 +172,9 @@ class Model:
 		super().__init__()
 
 		self.config = config
+
 		self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+		torch.manual_seed(seed=config['seed'])
 
 		self.latent_model = None
 		self.amortized_model = None
@@ -189,7 +191,7 @@ class Model:
 			raise Exception('unsupported reconstruction loss')
 
 		self.classification_loss = nn.CrossEntropyLoss()
-		self.rs = np.random.RandomState(seed=1337)
+		self.visualization_rs = np.random.RandomState(seed=1337)
 
 	@staticmethod
 	def load(checkpoint_dir):
@@ -805,7 +807,7 @@ class Model:
 
 	@torch.no_grad()
 	def visualize_translation(self, dataset, factor_idx, n_samples=10, randomized=False, amortized=False):
-		random = self.rs if randomized else np.random.RandomState(seed=0)
+		random = self.visualization_rs if randomized else np.random.RandomState(seed=0)
 		img_idx = torch.from_numpy(random.choice(len(dataset), size=n_samples, replace=False))
 		batch = dataset[img_idx]
 		batch = {name: tensor.to(self.device) for name, tensor in batch.items()}

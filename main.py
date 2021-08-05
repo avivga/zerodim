@@ -37,11 +37,11 @@ def train(args):
 	residual_factors = data['factors'][:, residual_factor_ids]
 
 	if config['gt_labels']:
-		rs = np.random.RandomState(seed=0)
+		rs = np.random.RandomState(seed=args.seed)
 		train_idx = rs.choice(imgs.shape[0], size=config['train_size'], replace=False)
 
 		# labels are partial but complete = same seed for each factor
-		rs = np.random.RandomState(seed=0)
+		rs = np.random.RandomState(seed=args.seed)
 		label_idx = rs.choice(config['train_size'], size=config['n_labels_per_factor'], replace=False)
 
 		label_masks = np.zeros_like(factors[train_idx]).astype(np.bool)
@@ -66,7 +66,8 @@ def train(args):
 		'n_factors': len(labeled_factor_ids),
 		'factor_sizes': factor_sizes[labeled_factor_ids],
 		'residual_factor_sizes': factor_sizes[residual_factor_ids],
-		'residual_factor_names': data['factor_names'][residual_factor_ids]
+		'residual_factor_names': data['factor_names'][residual_factor_ids],
+		'seed': args.seed
 	})
 
 	model = Model(config)
@@ -106,6 +107,7 @@ def main():
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-cf', '--config', type=str, required=True)
+	train_parser.add_argument('-s', '--seed', type=int, default=0)
 	train_parser.set_defaults(func=train)
 
 	args, extras = parser.parse_known_args()
