@@ -105,7 +105,6 @@ class SmallNorb(DataSet):
 		}
 
 	def _load_chunks(self, chunk_names):
-		"""Loads several chunks of the small norb data set into lists."""
 		list_of_images = []
 		list_of_features = []
 		for chunk_name in chunk_names:
@@ -195,79 +194,6 @@ class DSprites(DataSet):
 		}
 
 
-class CelebA(DataSet):
-
-	def __init__(self, base_dir, extras):
-		super().__init__(base_dir, extras)
-
-		parser = argparse.ArgumentParser()
-		parser.add_argument('-cs', '--crop-size', type=int, nargs=2, default=(128, 128))
-		parser.add_argument('-ts', '--target-size', type=int, nargs=2, default=(128, 128))
-
-		args = parser.parse_args(extras)
-		self.__dict__.update(vars(args))
-
-		self.__imgs_dir = os.path.join(self._base_dir, 'Img', 'img_align_celeba_png.7z', 'img_align_celeba_png')
-		self.__identity_map_path = os.path.join(self._base_dir, 'Anno', 'identity_CelebA.txt')
-
-	def __list_imgs(self):
-		with open(self.__identity_map_path, 'r') as fd:
-			lines = fd.read().splitlines()
-
-		img_paths = []
-		identities = []
-
-		for line in lines:
-			img_name, identity = line.split(' ')
-			img_path = os.path.join(self.__imgs_dir, os.path.splitext(img_name)[0] + '.png')
-
-			img_paths.append(img_path)
-			identities.append(identity)
-
-		return img_paths, identities
-
-	def read(self):
-		img_paths, identity_ids = self.__list_imgs()
-
-		imgs = np.empty(shape=(len(img_paths), self.target_size[0], self.target_size[1], 3), dtype=np.uint8)
-		for i in tqdm(range(len(img_paths))):
-			img = imageio.imread(img_paths[i])
-
-			img = img[
-				(img.shape[0] // 2 - self.crop_size[0] // 2):(img.shape[0] // 2 + self.crop_size[0] // 2),
-				(img.shape[1] // 2 - self.crop_size[1] // 2):(img.shape[1] // 2 + self.crop_size[1] // 2)
-			]
-
-			imgs[i] = cv2.resize(img, dsize=tuple(self.target_size))
-
-		return {
-			'imgs': imgs
-		}
-
-
-class CelebAHQ(DataSet):
-
-	def __init__(self, base_dir, extras):
-		super().__init__(base_dir)
-
-		parser = argparse.ArgumentParser()
-		parser.add_argument('-is', '--img-size', type=int, default=256)
-
-		args = parser.parse_args(extras)
-		self.__dict__.update(vars(args))
-
-	def read(self):
-		imgs = np.empty(shape=(30000, self.img_size, self.img_size, 3), dtype=np.uint8)
-		img_ids = np.arange(30000)
-		for i in tqdm(img_ids):
-			img_path = os.path.join(self._base_dir, 'x1024', '{}.jpg'.format(i))
-			imgs[i] = cv2.resize(imageio.imread(img_path), dsize=(self.img_size, self.img_size))
-
-		return {
-			'imgs': imgs
-		}
-
-
 class FFHQ(DataSet):
 
 	def __init__(self, base_dir, extras):
@@ -296,7 +222,5 @@ supported_datasets = {
 	'smallnorb': SmallNorb,
 	'shapes3d': Shapes3D,
 	'dsprites': DSprites,
-	'celeba': CelebA,
-	'celebahq': CelebAHQ,
 	'ffhq': FFHQ
 }
