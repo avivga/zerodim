@@ -313,7 +313,7 @@ class Model:
 				optimizer.step()
 				scheduler.step()
 
-				pbar.set_description_str('epoch #{}'.format(epoch))
+				pbar.set_description_str('[disentanglement] epoch #{}'.format(epoch))
 				pbar.set_postfix(loss=loss.item())
 
 			pbar.close()
@@ -418,7 +418,7 @@ class Model:
 				optimizer.step()
 				scheduler.step()
 
-				pbar.set_description_str('epoch #{}'.format(epoch))
+				pbar.set_description_str('[amortization] epoch #{}'.format(epoch))
 				pbar.set_postfix(loss=loss_total.item())
 
 			pbar.close()
@@ -532,7 +532,7 @@ class Model:
 				loss_generator.backward()
 				generator_optimizer.step()
 
-				pbar.set_description_str('epoch #{}'.format(epoch))
+				pbar.set_description_str('[synthesis] epoch #{}'.format(epoch))
 				pbar.set_postfix(gen_loss=loss_generator.item())
 
 			pbar.close()
