@@ -3,7 +3,6 @@ loss_reconstruction: perceptual
 
 factor_names:
   - species
-#  - age
 
 factor_dim: 256
 residual_dim: 64

@@ -6,25 +6,14 @@ factor_names:
   - gender
   - ethnicity
   - hair_color
-  - expression
   - makeup
-#  - skin
-  - hairstyle
   - beard
   - glasses
-#  - stereotype
 
-factors_with_extra_value:
-  - ethnicity
-  - hair_color
-#  - skin
-  - hairstyle
-#  - stereotype
-
-factor_dim: 8
+factor_dim: 32
 residual_dim: 256
 
-residual_std: 0
+residual_std: 1
 
 perceptual_loss:
   - 2
@@ -38,7 +27,7 @@ train:
   n_epochs: 50
   n_epochs_between_evals: 50
   n_epochs_between_visualizations: 1
-  n_epochs_before_entropy: 20
+  n_epochs_before_entropy: 10
 
   learning_rate:
     latent: 0.01
@@ -48,15 +37,15 @@ train:
 
   loss_weights:
     reconstruction: 1
-    residual_decay: 0.0001
+    residual_decay: 0.00001
 
-    entropy: 0.001
-    classification: 0.001
+    entropy: 0.01
+    classification: 0.01
     supervised: 10
 
 amortization:
   batch_size: 64
-  n_epochs: 50
+  n_epochs: 100
   n_epochs_between_evals: 50
   n_epochs_between_visualizations: 5
 
@@ -78,7 +67,7 @@ synthesis:
 
   loss_weights:
     reconstruction: 1
-    latent: 10
+    latent: 1
     adversarial: 1
 
 gt_labels: False

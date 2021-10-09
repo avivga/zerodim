@@ -55,17 +55,12 @@ def train(args):
 			label_masks[label_idx, f] = True
 			factors[~label_idx, f] = 0  # dummy unused valid value
 
-	factor_sizes = data['factor_sizes']
-	for f, factor_name in enumerate(data['factor_names'].tolist()):
-		if 'factors_with_extra_value' in config and factor_name in config['factors_with_extra_value']:
-			factor_sizes[f] += 1
-
 	config.update({
 		'img_shape': imgs[train_idx].shape[1:],
 		'n_imgs': imgs[train_idx].shape[0],
 		'n_factors': len(labeled_factor_ids),
-		'factor_sizes': factor_sizes[labeled_factor_ids],
-		'residual_factor_sizes': factor_sizes[residual_factor_ids],
+		'factor_sizes': data['factor_sizes'][labeled_factor_ids],
+		'residual_factor_sizes': data['factor_sizes'][residual_factor_ids],
 		'residual_factor_names': data['factor_names'][residual_factor_ids],
 		'seed': args.seed
 	})
