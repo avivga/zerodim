@@ -209,7 +209,7 @@ class FFHQ(DataSet):
 		imgs = np.empty(shape=(70000, self.img_size, self.img_size, 3), dtype=np.uint8)
 		img_ids = np.arange(70000)
 		for i in tqdm(img_ids):
-			img_path = os.path.join(self._base_dir, 'imgs-x256', 'img{:08d}.png'.format(i))
+			img_path = os.path.join(self._base_dir, 'imgs', '{:05d}.png'.format(i))
 			imgs[i] = cv2.resize(imageio.imread(img_path), dsize=(self.img_size, self.img_size))
 
 		return {
