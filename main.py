@@ -1,8 +1,10 @@
 import argparse
 import os
 import yaml
+import imageio
 
 import numpy as np
+import cv2
 
 import data
 from assets import AssetManager
@@ -15,7 +17,7 @@ def preprocess(args, extras=[]):
 	img_dataset_def = data.supported_datasets[args.dataset_id]
 	img_dataset = img_dataset_def(args.dataset_path, extras)
 
-	np.savez(file=assets.get_preprocess_file_path(args.data_name), **img_dataset.read())
+	np.savez(file=assets.get_preprocess_file_path(args.out_data_name), **img_dataset.read())
 
 
 def train(args):
@@ -85,9 +87,21 @@ def train(args):
 		model.evaluate(imgs, factors, residual_factors, eval_dir)
 
 
+def manipulate(args):
+	assets = AssetManager(args.base_dir)
+	model_dir = assets.get_model_dir(args.model_name)
+	model = Model.load(model_dir)
+
+	img = imageio.imread(args.img_path)
+	img = cv2.resize(img, dsize=(model.config['img_shape'][1], model.config['img_shape'][0]))
+	manipulated_img = model.manipulate(img, args.factor_name)
+
+	imageio.imwrite(args.output_img_path, manipulated_img)
+
+
 def main():
 	parser = argparse.ArgumentParser()
-	parser.add_argument('-bd', '--base-dir', type=str, required=True)
+	parser.add_argument('-bd', '--base-dir', type=str, default='.')
 
 	action_parsers = parser.add_subparsers(dest='action')
 	action_parsers.required = True
@@ -95,7 +109,7 @@ def main():
 	preprocess_parser = action_parsers.add_parser('preprocess')
 	preprocess_parser.add_argument('-di', '--dataset-id', type=str, choices=data.supported_datasets, required=True)
 	preprocess_parser.add_argument('-dp', '--dataset-path', type=str, required=True)
-	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	preprocess_parser.add_argument('-odn', '--out-data-name', type=str, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
 
 	train_parser = action_parsers.add_parser('train')
@@ -104,6 +118,13 @@ def main():
 	train_parser.add_argument('-cf', '--config', type=str, required=True)
 	train_parser.add_argument('-s', '--seed', type=int, default=0)
 	train_parser.set_defaults(func=train)
+
+	manipulate_parser = action_parsers.add_parser('manipulate')
+	manipulate_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	manipulate_parser.add_argument('-fn', '--factor-name', type=str, required=True)
+	manipulate_parser.add_argument('-i', '--img-path', type=str, required=True)
+	manipulate_parser.add_argument('-o', '--output-img-path', type=str, required=True)
+	manipulate_parser.set_defaults(func=manipulate)
 
 	args, extras = parser.parse_known_args()
 	if len(extras) == 0:
