@@ -5,7 +5,7 @@
 
 > **Abstract:** Unsupervised disentanglement has been shown to be theoretically impossible without inductive biases on the models and the data. As an alternative approach, recent methods rely on limited supervision to disentangle the factors of variation and allow their identifiability. While annotating the true generative factors is only required for a limited number of observations, we argue that it is infeasible to enumerate all the factors of variation that describe a real-world image distribution. To this end, we propose a method for disentangling a set of factors which are only partially labeled, as well as separating the complementary set of residual factors that are never explicitly specified. Our success in this challenging setting, demonstrated on synthetic benchmarks, gives rise to leveraging off-the-shelf image descriptors to partially annotate a subset of attributes in real image domains (e.g. of human faces) with minimal manual effort. Specifically, we use a recent language-image embedding model (CLIP) to annotate a set of attributes of interest in a zero-shot manner and demonstrate state-of-the-art disentangled image manipulation results.
 
-<a href="https://arxiv.org/abs/2106.15610" target="_blank"><img src="https://img.shields.io/badge/arXiv-2106.15610-b31b1b.svg"></a>
+<a href="https://arxiv.org/abs/2106.15610" target="_blank"><img src="https://img.shields.io/badge/arXiv-2106.15610-b31b1b.svg"></a> <a href="https://replicate.ai/avivga/zerodim"><img src="https://img.shields.io/static/v1?label=Replicate&message=Demo and Docker image&color=yellow" height=18></a>
 
 ## Results
 
