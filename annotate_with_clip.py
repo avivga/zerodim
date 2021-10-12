@@ -34,11 +34,6 @@ def annotate_with_clip(args):
 
     ENC_LEN = 512
 
-    transform_no_norm = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Resize(224),
-    ])
-
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize(224),
@@ -101,7 +96,7 @@ def annotate_with_clip(args):
             I = list(I[0])
             I.sort()
 
-            values_list[i,I] = j
+            values_list[i, I] = j
             used_values[I] = used_values[I] + 1
 
         values_list[i, np.where(used_values>1)[0]] = -1  # ignore image attributes which were assigned with more than 1 value
@@ -113,7 +108,7 @@ def annotate_with_clip(args):
         imgs=imgs,
         factors=factors,
         factor_sizes=[np.unique(factors[:, f]).size - 1 for f in range(factors.shape[1])],
-		factor_names=att_names
+        factor_names=att_names
     )
 
 
