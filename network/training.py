@@ -606,11 +606,13 @@ class Model:
 			json.dump(scores, fp)
 
 	@torch.no_grad()
-	def manipulate(self, img, factor_name):
+	def manipulate(self, img, factor_name, include_original=True, concat_axis=1):
 		self.amortized_model.to(self.device)
 		self.amortized_model.eval()
 
-		results = [img]
+		results = []
+		if include_original:
+			results.append(img)
 
 		img = torch.from_numpy(img.astype(np.float32) / 255.0).permute(2, 0, 1).to(self.device)
 		residual_code = self.amortized_model.residual_encoder(img.unsqueeze(dim=0))[0]
@@ -629,7 +631,7 @@ class Model:
 			img_manipulated = (img_manipulated.clamp(min=0, max=1).permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
 			results.append(img_manipulated)
 
-		return np.concatenate(results, axis=1)
+		return np.concatenate(results, axis=concat_axis)
 
 	def __iterate_latent_model(self, batch):
 		factor_model_out = self.latent_model.factor_model(batch['img'], batch['factors'], batch['label_masks'])

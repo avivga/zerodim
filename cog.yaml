@@ -1,0 +1,40 @@
+# Configuration for Cog ⚙️
+# Reference: https://github.com/replicate/cog/blob/main/docs/yaml.md
+
+build:
+  gpu: true
+  python_version: "3.8"
+  system_packages:
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+    - "ninja-build"
+    - "cmake"
+    - "bzip2"
+  python_packages:
+    - "cmake==3.21.3"
+    - "torch==1.7.1"
+    - "torchvision==0.8.2"
+    - "numpy==1.20.1"
+    - "ipython==7.21.0"
+    - "Pillow==8.3.1"
+    - "imageio==2.9.0"
+    - "tqdm==4.62.3"
+    - "tensorboard==2.6.0"
+    - "scipy==1.7.1"
+    - "scikit-learn==1.0"
+    - "dlib==19.22.1"
+  run:
+    # clone required repos
+    - "git clone https://github.com/rosinality/stylegan2-pytorch"
+    - "git clone https://github.com/pbaylies/stylegan-encoder"
+
+    # download landmark detection model
+    - "wget -O /tmp/shape_predictor_68_face_landmarks.dat.bz2 http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
+    - "cd /tmp && bunzip2 shape_predictor_68_face_landmarks.dat.bz2"
+    - "mv /tmp/shape_predictor_68_face_landmarks.dat /"
+
+    # pre-cache vgg model
+    - "mkdir -p /root/.cache/torch/hub/checkpoints"
+    - "wget -q -O /root/.cache/torch/hub/checkpoints/vgg16-397923af.pth https://download.pytorch.org/models/vgg16-397923af.pth"
+
+predict: "predict.py:Predictor"
