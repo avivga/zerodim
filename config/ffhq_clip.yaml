@@ -6,7 +6,6 @@ factor_names:
   - gender
   - ethnicity
   - hair_color
-  - makeup
   - beard
   - glasses
 
